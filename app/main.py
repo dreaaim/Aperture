@@ -20,10 +20,15 @@ from fastapi import FastAPI
 from app.api.endpoints import router
 from app.api.middleware import error_handler
 from app.utils.logger import default_logger
+from app.utils.telemetry import setup_instrumentation
 
 # Create FastAPI application instance
 # The title parameter sets the application name in the API documentation
 app = FastAPI(title="Aperture LLM Router")
+
+# Set up OpenTelemetry instrumentation
+# This instruments the FastAPI application and requests library
+setup_instrumentation(app)
 
 # Add HTTP middleware for global error handling
 # This middleware catches all exceptions and returns standardized error responses

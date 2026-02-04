@@ -55,6 +55,10 @@ from datetime import datetime
 from typing import Literal, List, Dict, Optional
 
 from app.models import CacheEntry, RequestLog
+from app.utils.telemetry import get_tracer
+
+# Get OpenTelemetry tracer
+tracer = get_tracer()
 
 
 class MemoryRepository:
@@ -104,7 +108,17 @@ class MemoryRepository:
             >>> len(repository.cache_entries)
             1
         """
-        self.cache_entries.append(entry)
+        # Create span for cache entry addition
+        with tracer.start_as_current_span("add_cache_entry", attributes={
+            "model_id": entry.model_id,
+            "query": entry.query[:50],  # Truncate for span attributes
+            "embedding_dim": len(entry.query_embedding)
+        }) as span:
+            self.cache_entries.append(entry)
+            # Set span attributes
+            span.set_attribute("cache_entry_added", True)
+            span.set_attribute("new_cache_size", len(self.cache_entries))
+            span.set_attribute("answer_length", len(entry.answer))
 
     def add_request_log(
         self,
@@ -150,26 +164,41 @@ class MemoryRepository:
             >>> len(repository.model_ratings["gpt-4o"])
             1
         """
-        # Create a RequestLog object with the provided data
-        log = RequestLog(
-            request_id=request_id,
-            query=query,
-            query_embedding=query_embedding,
-            intent_tag=intent_tag,
-            router_decision=router_decision,
-            response_content=response_content,
-            cache_status=cache_status,
-            user_rating=user_rating,
-            tokens_used=tokens_used,
-            created_at=datetime.utcnow(),
-        )
-        
-        # Add the log to the repository
-        self.request_logs.append(log)
-        
-        # Update model ratings if a user rating is provided
-        if log.user_rating is not None:
-            self.model_ratings[log.router_decision].append(log.user_rating)
+        # Create span for request log addition
+        with tracer.start_as_current_span("add_request_log", attributes={
+            "request_id": request_id,
+            "intent_tag": intent_tag,
+            "router_decision": router_decision,
+            "cache_status": cache_status,
+            "tokens_used": tokens_used,
+            "user_rating": user_rating
+        }) as span:
+            # Create a RequestLog object with the provided data
+            log = RequestLog(
+                request_id=request_id,
+                query=query,
+                query_embedding=query_embedding,
+                intent_tag=intent_tag,
+                router_decision=router_decision,
+                response_content=response_content,
+                cache_status=cache_status,
+                user_rating=user_rating,
+                tokens_used=tokens_used,
+                created_at=datetime.utcnow(),
+            )
+            
+            # Add the log to the repository
+            self.request_logs.append(log)
+            span.set_attribute("log_added", True)
+            span.set_attribute("new_log_count", len(self.request_logs))
+            
+            # Update model ratings if a user rating is provided
+            if log.user_rating is not None:
+                self.model_ratings[log.router_decision].append(log.user_rating)
+                span.set_attribute("rating_updated", True)
+                span.set_attribute("model_id", log.router_decision)
+                span.set_attribute("rating", log.user_rating)
+                span.set_attribute("new_rating_count", len(self.model_ratings[log.router_decision]))
 
     def get_model_rating(self, model_id: str) -> float:
         """Get a normalized rating score (0-1) for a model.
@@ -200,16 +229,28 @@ class MemoryRepository:
             >>> repository.get_model_rating("llama-3-8b")  # No ratings
             0.6
         """
-        # Get ratings for the model (empty list if none exist)
-        ratings = self.model_ratings.get(model_id, [])
-        
-        # Return default rating if no ratings exist
-        if not ratings:
-            return 0.6
-        
-        # Calculate normalized rating (0-1)
-        # ratings are 1-5, so divide by 5 to normalize
-        return sum(ratings) / (len(ratings) * 5)
+        # Create span for model rating retrieval
+        with tracer.start_as_current_span("get_model_rating", attributes={
+            "model_id": model_id
+        }) as span:
+            # Get ratings for the model (empty list if none exist)
+            ratings = self.model_ratings.get(model_id, [])
+            span.set_attribute("rating_count", len(ratings))
+            
+            # Return default rating if no ratings exist
+            if not ratings:
+                span.set_attribute("used_default_rating", True)
+                span.set_attribute("rating", 0.6)
+                return 0.6
+            
+            # Calculate normalized rating (0-1)
+            # ratings are 1-5, so divide by 5 to normalize
+            rating = sum(ratings) / (len(ratings) * 5)
+            span.set_attribute("used_default_rating", False)
+            span.set_attribute("rating", rating)
+            span.set_attribute("average_rating", sum(ratings) / len(ratings))
+            
+            return rating
 
     def generate_request_id(self) -> str:
         """Generate a unique UUID for tracking the request.
@@ -224,4 +265,8 @@ class MemoryRepository:
             >>> isinstance(uuid.UUID(request_id), uuid.UUID)
             True
         """
-        return str(uuid.uuid4())
+        # Create span for request ID generation
+        with tracer.start_as_current_span("generate_request_id") as span:
+            request_id = str(uuid.uuid4())
+            span.set_attribute("request_id", request_id)
+            return request_id

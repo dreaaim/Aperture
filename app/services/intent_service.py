@@ -18,6 +18,10 @@ Example:
 """
 
 from app.config import settings
+from app.utils.telemetry import get_tracer
+
+# Get OpenTelemetry tracer
+tracer = get_tracer()
 
 
 class IntentService:
@@ -67,15 +71,24 @@ class IntentService:
             >>> service.classify_intent("这是一个普通的问题")
             "general"
         """
-        # Convert query to lowercase for case-insensitive matching
-        lowered = query.lower()
-        
-        # Iterate through each intent category and its keywords
-        for intent, keywords in self.intent_keywords.items():
-            # Check if any keyword from the current intent is present in the query
-            if any(keyword in lowered for keyword in keywords):
-                # Return the first matching intent
-                return intent
-        
-        # If no keywords match, return "general" intent
-        return "general"
+        # Create span for intent classification
+        with tracer.start_as_current_span("classify_intent", attributes={
+            "query": query[:50]  # Truncate for span attributes
+        }) as span:
+            # Convert query to lowercase for case-insensitive matching
+            lowered = query.lower()
+            
+            # Iterate through each intent category and its keywords
+            for intent, keywords in self.intent_keywords.items():
+                # Check if any keyword from the current intent is present in the query
+                if any(keyword in lowered for keyword in keywords):
+                    # Set span attributes
+                    span.set_attribute("intent", intent)
+                    span.set_attribute("matched_intent", True)
+                    # Return the first matching intent
+                    return intent
+            
+            # If no keywords match, return "general" intent
+            span.set_attribute("intent", "general")
+            span.set_attribute("matched_intent", False)
+            return "general"

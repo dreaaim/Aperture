@@ -30,6 +30,10 @@ from app.repositories.memory_repository import MemoryRepository
 from app.services.cache_service import CacheService
 from app.services.intent_service import IntentService
 from app.services.model_service import ModelService
+from app.utils.telemetry import get_tracer
+
+# Get OpenTelemetry tracer
+tracer = get_tracer()
 
 
 class Container:
@@ -52,17 +56,26 @@ class Container:
         This method initializes the repository and all services, ensuring that
         dependencies are properly injected.
         """
-        # Initialize repository
-        # The repository is a dependency for some services
-        self.repository = MemoryRepository()
-        
-        # Initialize services
-        # CacheService depends on the repository
-        self.cache_service = CacheService(self.repository)
-        # IntentService has no dependencies
-        self.intent_service = IntentService()
-        # ModelService depends on the repository
-        self.model_service = ModelService(self.repository)
+        # Create span for container initialization
+        with tracer.start_as_current_span("container_init") as span:
+            # Initialize repository
+            # The repository is a dependency for some services
+            self.repository = MemoryRepository()
+            span.set_attribute("repository_initialized", True)
+            
+            # Initialize services
+            # CacheService depends on the repository
+            self.cache_service = CacheService(self.repository)
+            span.set_attribute("cache_service_initialized", True)
+            # IntentService has no dependencies
+            self.intent_service = IntentService()
+            span.set_attribute("intent_service_initialized", True)
+            # ModelService depends on the repository
+            self.model_service = ModelService(self.repository)
+            span.set_attribute("model_service_initialized", True)
+            
+            # Set span attributes
+            span.set_attribute("services_initialized", 4)
 
     def get_cache_service(self) -> CacheService:
         """Get an instance of CacheService.
@@ -76,7 +89,10 @@ class Container:
             >>> type(cache_service)
             <class 'app.services.cache_service.CacheService'>
         """
-        return self.cache_service
+        # Create span for cache service retrieval
+        with tracer.start_as_current_span("get_cache_service") as span:
+            span.set_attribute("service_type", "CacheService")
+            return self.cache_service
 
     def get_intent_service(self) -> IntentService:
         """Get an instance of IntentService.
@@ -90,7 +106,10 @@ class Container:
             >>> type(intent_service)
             <class 'app.services.intent_service.IntentService'>
         """
-        return self.intent_service
+        # Create span for intent service retrieval
+        with tracer.start_as_current_span("get_intent_service") as span:
+            span.set_attribute("service_type", "IntentService")
+            return self.intent_service
 
     def get_model_service(self) -> ModelService:
         """Get an instance of ModelService.
@@ -104,7 +123,10 @@ class Container:
             >>> type(model_service)
             <class 'app.services.model_service.ModelService'>
         """
-        return self.model_service
+        # Create span for model service retrieval
+        with tracer.start_as_current_span("get_model_service") as span:
+            span.set_attribute("service_type", "ModelService")
+            return self.model_service
 
     def get_repository(self) -> MemoryRepository:
         """Get an instance of MemoryRepository.
@@ -118,7 +140,10 @@ class Container:
             >>> type(repository)
             <class 'app.repositories.memory_repository.MemoryRepository'>
         """
-        return self.repository
+        # Create span for repository retrieval
+        with tracer.start_as_current_span("get_repository") as span:
+            span.set_attribute("service_type", "MemoryRepository")
+            return self.repository
 
 
 # Create a global container instance

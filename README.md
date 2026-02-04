@@ -9,6 +9,16 @@ This repository provides a lightweight LLM MoE router + semantic cache prototype
 - Weighted multi-factor routing (history, price, quota, difficulty match).
 - Request logging for feedback loops.
 
+## Documentation
+
+For detailed documentation, please refer to the [docs](./docs/) directory:
+
+- [Home](./docs/index.md) - Overview of the project
+- [Architecture](./docs/architecture.md) - Detailed architecture design
+- [Usage](./docs/usage.md) - Installation and usage guide
+- [Core Features](./docs/core-features.md) - Detailed explanation of core features
+- [Development](./docs/development.md) - Development guide for contributors
+
 ## Quickstart
 ```bash
 python -m venv .venv
@@ -33,3 +43,15 @@ curl -X POST http://localhost:8000/v1/query \
 ## Extending
 - Replace `embed_text` with your embedding provider.
 - Integrate a real vector DB and a model gateway (LiteLLM, LangChain, etc.).
+- Customize intent classification and model selection strategies.
+
+## API Documentation
+
+Once the server is running, you can access the interactive API documentation:
+
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.

@@ -39,6 +39,10 @@ from app.config import settings
 from app.models import CacheEntry
 from app.repositories.memory_repository import MemoryRepository
 from app.utils.math import cosine_similarity
+from app.utils.telemetry import get_tracer
+
+# Get OpenTelemetry tracer
+tracer = get_tracer()
 
 
 class CacheService:
@@ -80,24 +84,34 @@ class CacheService:
             >>> embedding[0]
             0.45  # Example value
         """
-        # Generate SHA-256 hash of the text
-        digest = hashlib.sha256(text.encode("utf-8")).digest()
-        
-        # Convert bytes to float values between 0 and 1
-        values = [b / 255 for b in digest]
-        
-        # Calculate chunk size based on desired embedding dimension
-        chunk_size = len(values) // settings.embedding_dim
-        embeddings = []
-        
-        # Average chunks to create fixed-size embedding
-        for index in range(settings.embedding_dim):
-            # Get the chunk of values for this index
-            chunk = values[index * chunk_size : (index + 1) * chunk_size]
-            # Calculate average of the chunk
-            embeddings.append(sum(chunk) / len(chunk))
-        
-        return embeddings
+        # Create span for text embedding generation
+        with tracer.start_as_current_span("embed_text", attributes={
+            "text": text[:50],  # Truncate for span attributes
+            "embedding_dim": settings.embedding_dim
+        }) as span:
+            # Generate SHA-256 hash of the text
+            digest = hashlib.sha256(text.encode("utf-8")).digest()
+            
+            # Convert bytes to float values between 0 and 1
+            values = [b / 255 for b in digest]
+            
+            # Calculate chunk size based on desired embedding dimension
+            chunk_size = len(values) // settings.embedding_dim
+            embeddings = []
+            
+            # Average chunks to create fixed-size embedding
+            for index in range(settings.embedding_dim):
+                # Get the chunk of values for this index
+                chunk = values[index * chunk_size : (index + 1) * chunk_size]
+                # Calculate average of the chunk
+                embeddings.append(sum(chunk) / len(chunk))
+            
+            # Set span attributes
+            span.set_attribute("embedding_generated", True)
+            span.set_attribute("digest_length", len(digest))
+            span.set_attribute("chunk_size", chunk_size)
+            
+            return embeddings
 
     def find_similar(self, query_embedding: List[float]) -> Tuple[Optional[CacheEntry], float]:
         """Find the most similar cache entry and its similarity score.
@@ -124,21 +138,33 @@ class CacheService:
             >>> similarity
             0.95  # Example similarity score
         """
-        # Initialize variables to track best match
-        best_entry: Optional[CacheEntry] = None
-        best_score = 0.0
-        
-        # Iterate through all cache entries
-        for entry in self.repository.cache_entries:
-            # Calculate cosine similarity between query embedding and entry embedding
-            score = cosine_similarity(query_embedding, entry.query_embedding)
+        # Create span for similar cache entry search
+        with tracer.start_as_current_span("find_similar", attributes={
+            "embedding_dim": len(query_embedding),
+            "cache_entries_count": len(self.repository.cache_entries)
+        }) as span:
+            # Initialize variables to track best match
+            best_entry: Optional[CacheEntry] = None
+            best_score = 0.0
             
-            # Update best match if current entry is more similar
-            if score > best_score:
-                best_score = score
-                best_entry = entry
-        
-        return best_entry, best_score
+            # Iterate through all cache entries
+            for entry in self.repository.cache_entries:
+                # Calculate cosine similarity between query embedding and entry embedding
+                score = cosine_similarity(query_embedding, entry.query_embedding)
+                
+                # Update best match if current entry is more similar
+                if score > best_score:
+                    best_score = score
+                    best_entry = entry
+            
+            # Set span attributes
+            span.set_attribute("best_similarity_score", best_score)
+            span.set_attribute("similar_entry_found", best_entry is not None)
+            if best_entry:
+                span.set_attribute("best_entry_model_id", best_entry.model_id)
+                span.set_attribute("best_entry_query", best_entry.query[:50])  # Truncate for span attributes
+            
+            return best_entry, best_score
 
     def upsert_cache(self, query: str, query_embedding: List[float], answer: str, model_id: str) -> None:
         """Add a new entry to the cache.
@@ -164,13 +190,24 @@ class CacheService:
             >>> len(repository.cache_entries)
             1
         """
-        # Create a new CacheEntry object
-        cache_entry = CacheEntry(
-            query=query,
-            query_embedding=query_embedding,
-            answer=answer,
-            model_id=model_id,
-        )
-        
-        # Add the entry to the repository
-        self.repository.add_cache_entry(cache_entry)
+        # Create span for cache upsert
+        with tracer.start_as_current_span("upsert_cache", attributes={
+            "query": query[:50],  # Truncate for span attributes
+            "model_id": model_id,
+            "embedding_dim": len(query_embedding)
+        }) as span:
+            # Create a new CacheEntry object
+            cache_entry = CacheEntry(
+                query=query,
+                query_embedding=query_embedding,
+                answer=answer,
+                model_id=model_id,
+            )
+            
+            # Add the entry to the repository
+            self.repository.add_cache_entry(cache_entry)
+            
+            # Set span attributes
+            span.set_attribute("cache_entry_added", True)
+            span.set_attribute("answer_length", len(answer))
+            span.set_attribute("new_cache_size", len(self.repository.cache_entries))

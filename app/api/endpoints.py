@@ -28,6 +28,8 @@ from app.services.container import container
 from app.models import QueryRequest, QueryResponse
 from app.config import settings
 from app.utils.logger import default_logger
+from opentelemetry import trace
+from opentelemetry.trace import set_span_in_context
 
 router = APIRouter()
 
@@ -99,6 +101,9 @@ def route_query(request: Request, payload: QueryRequest) -> QueryResponse:
             "cache_status": "MISS"
         }
     """
+    # Get OpenTelemetry tracer
+    tracer = trace.get_tracer(__name__)
+    
     # Generate a unique request ID for tracking
     request_id = repository.generate_request_id()
     # Store request_id in request state for error handling
@@ -107,86 +112,132 @@ def route_query(request: Request, payload: QueryRequest) -> QueryResponse:
     # Log incoming request (truncate query to 50 characters for brevity)
     default_logger.info(f"Received request {request_id}: {payload.query[:50]}...")
     
-    try:
-        # Step 1: Embed query for semantic cache lookup
-        # The embedding is used to find similar queries in the cache
-        query_embedding = cache_service.embed_text(payload.query)
-        # Find the most similar cached entry and its similarity score
-        cached_entry, similarity = cache_service.find_similar(query_embedding)
+    # Get current span (should be the server span created by FastAPI)
+    current_span = trace.get_current_span()
+    default_logger.info(f"Current span: {current_span}")
+    
+    # Create main span for the request processing
+    # Use the current span as the parent
+    with tracer.start_as_current_span("route_query", attributes={
+        "request_id": request_id,
+        "query": payload.query[:50],  # Truncate for span attributes
+        "user_id": payload.user_id or "anonymous"
+    }) as main_span:
+        # Log main span
+        default_logger.info(f"Main span: {main_span}")
+        default_logger.info(f"Main span context: {main_span.get_span_context()}")
+        try:
+            # Step 1: Embed query for semantic cache lookup
+            with tracer.start_as_current_span("embed_query") as embed_span:
+                embed_span.set_attribute("query", payload.query[:50])
+                # The embedding is used to find similar queries in the cache
+                query_embedding = cache_service.embed_text(payload.query)
+                # Find the most similar cached entry and its similarity score
+                cached_entry, similarity = cache_service.find_similar(query_embedding)
+                embed_span.set_attribute("similarity_score", similarity)
+                embed_span.set_attribute("cache_entry_found", cached_entry is not None)
 
-        # Initialize variables for response
-        cache_status: Literal['HIT', 'FEW_SHOT', 'MISS']
-        model_id: str
-        answer: str
-        tokens_used: int
+            # Initialize variables for response
+            cache_status: Literal['HIT', 'FEW_SHOT', 'MISS']
+            model_id: str
+            answer: str
+            tokens_used: int
 
-        # Step 2: Determine routing path based on cache similarity
-        if cached_entry and similarity >= settings.cache_thresholds.direct_hit:
-            # High similarity (>= direct_hit threshold) -> direct cache return
-            # This means we found a very similar query in the cache
-            cache_status = "HIT"
-            model_id = cached_entry.model_id
-            answer = cached_entry.answer
-            tokens_used = 0  # No tokens used for cache hits
-            default_logger.info(f"Request {request_id}: Cache HIT with similarity {similarity:.2f}")
-        elif cached_entry and similarity >= settings.cache_thresholds.few_shot:
-            # Medium similarity (>= few_shot threshold) -> few-shot augmentation
-            # Use a small model with cached context to generate a response
-            cache_status = "FEW_SHOT"
-            # Select a small model for few-shot learning
-            model = model_service.select_few_shot_model()
-            model_id = model.model_id
-            # Create context from cached entry
-            context = f"历史问题: {cached_entry.query}\n历史答案: {cached_entry.answer}"
-            # Generate response with context
-            answer, tokens_used = generate_response(payload.query, model_id, context=context)
-            default_logger.info(f"Request {request_id}: Cache FEW_SHOT with similarity {similarity:.2f}, using model {model_id}")
-        else:
-            # Low similarity (< few_shot threshold) -> full routing
-            # Classify intent and select an appropriate model
-            cache_status = "MISS"
-            # Classify the intent of the query
-            intent = intent_service.classify_intent(payload.query)
-            # Select a model based on the classified intent
-            model = model_service.select_model(intent)
-            model_id = model.model_id
-            # Generate response without context
-            answer, tokens_used = generate_response(payload.query, model_id)
-            default_logger.info(f"Request {request_id}: Cache MISS, classified as {intent}, using model {model_id}")
+            # Step 2: Determine routing path based on cache similarity
+            with tracer.start_as_current_span("determine_routing") as routing_span:
+                routing_span.set_attribute("similarity_score", similarity)
+                routing_span.set_attribute("direct_hit_threshold", settings.cache_thresholds.direct_hit)
+                routing_span.set_attribute("few_shot_threshold", settings.cache_thresholds.few_shot)
+                
+                if cached_entry and similarity >= settings.cache_thresholds.direct_hit:
+                    # High similarity (>= direct_hit threshold) -> direct cache return
+                    # This means we found a very similar query in the cache
+                    cache_status = "HIT"
+                    model_id = cached_entry.model_id
+                    answer = cached_entry.answer
+                    tokens_used = 0  # No tokens used for cache hits
+                    routing_span.set_attribute("cache_status", cache_status)
+                    routing_span.set_attribute("model_id", model_id)
+                    default_logger.info(f"Request {request_id}: Cache HIT with similarity {similarity:.2f}")
+                elif cached_entry and similarity >= settings.cache_thresholds.few_shot:
+                    # Medium similarity (>= few_shot threshold) -> few-shot augmentation
+                    # Use a small model with cached context to generate a response
+                    cache_status = "FEW_SHOT"
+                    # Select a small model for few-shot learning
+                    model = model_service.select_few_shot_model()
+                    model_id = model.model_id
+                    # Create context from cached entry
+                    context = f"历史问题: {cached_entry.query}\n历史答案: {cached_entry.answer}"
+                    # Generate response with context
+                    answer, tokens_used = generate_response(payload.query, model_id, context=context)
+                    routing_span.set_attribute("cache_status", cache_status)
+                    routing_span.set_attribute("model_id", model_id)
+                    routing_span.set_attribute("tokens_used", tokens_used)
+                    default_logger.info(f"Request {request_id}: Cache FEW_SHOT with similarity {similarity:.2f}, using model {model_id}")
+                else:
+                    # Low similarity (< few_shot threshold) -> full routing
+                    # Classify intent and select an appropriate model
+                    cache_status = "MISS"
+                    # Classify the intent of the query
+                    intent = intent_service.classify_intent(payload.query)
+                    # Select a model based on the classified intent
+                    model = model_service.select_model(intent)
+                    model_id = model.model_id
+                    # Generate response without context
+                    answer, tokens_used = generate_response(payload.query, model_id)
+                    routing_span.set_attribute("cache_status", cache_status)
+                    routing_span.set_attribute("intent", intent)
+                    routing_span.set_attribute("model_id", model_id)
+                    routing_span.set_attribute("tokens_used", tokens_used)
+                    default_logger.info(f"Request {request_id}: Cache MISS, classified as {intent}, using model {model_id}")
 
-        # Step 3: Log the request for future difficulty estimation
-        # Re-classify intent for logging (ensuring consistency)
-        intent_tag = intent_service.classify_intent(payload.query)
-        # Add request log to repository
-        repository.add_request_log(
-            request_id=request_id,
-            query=payload.query,
-            query_embedding=query_embedding,
-            intent_tag=intent_tag,
-            router_decision=model_id,
-            response_content=answer,
-            cache_status=cache_status,
-            tokens_used=tokens_used,
-        )
+            # Step 3: Log the request for future difficulty estimation
+            with tracer.start_as_current_span("log_request") as log_span:
+                log_span.set_attribute("request_id", request_id)
+                # Re-classify intent for logging (ensuring consistency)
+                intent_tag = intent_service.classify_intent(payload.query)
+                # Add request log to repository
+                repository.add_request_log(
+                    request_id=request_id,
+                    query=payload.query,
+                    query_embedding=query_embedding,
+                    intent_tag=intent_tag,
+                    router_decision=model_id,
+                    response_content=answer,
+                    cache_status=cache_status,
+                    tokens_used=tokens_used,
+                )
+                log_span.set_attribute("intent_tag", intent_tag)
 
-        # Step 4: Cache non-hit responses for future use
-        if cache_status != "HIT":
-            # Only cache non-hit responses to avoid duplicating stored entries
-            cache_service.upsert_cache(payload.query, query_embedding, answer, model_id)
-            default_logger.info(f"Request {request_id}: Cached response for future use")
+            # Step 4: Cache non-hit responses for future use
+            if cache_status != "HIT":
+                with tracer.start_as_current_span("cache_response") as cache_span:
+                    cache_span.set_attribute("cache_status", cache_status)
+                    cache_span.set_attribute("model_id", model_id)
+                    # Only cache non-hit responses to avoid duplicating stored entries
+                    cache_service.upsert_cache(payload.query, query_embedding, answer, model_id)
+                    default_logger.info(f"Request {request_id}: Cached response for future use")
 
-        # Step 5: Log response details
-        default_logger.info(f"Request {request_id}: Completed with model {model_id}, tokens used: {tokens_used}")
+            # Step 5: Log response details
+            default_logger.info(f"Request {request_id}: Completed with model {model_id}, tokens used: {tokens_used}")
+            
+            # Set main span attributes
+            main_span.set_attribute("cache_status", cache_status)
+            main_span.set_attribute("model_id", model_id)
+            main_span.set_attribute("tokens_used", tokens_used)
 
-        # Step 6: Return the response
-        return QueryResponse(
-            request_id=request_id,
-            answer=answer,
-            model_id=model_id,
-            cache_status=cache_status,
-        )
-    except Exception as e:
-        # Log any errors that occur during processing
-        default_logger.error(f"Request {request_id}: Error processing request: {str(e)}")
-        # Re-raise the exception to be handled by the global error handler
-        raise
+            # Step 6: Return the response
+            return QueryResponse(
+                request_id=request_id,
+                answer=answer,
+                model_id=model_id,
+                cache_status=cache_status,
+            )
+        except Exception as e:
+            # Log any errors that occur during processing
+            default_logger.error(f"Request {request_id}: Error processing request: {str(e)}")
+            # Set error attribute on span
+            main_span.set_attribute("error", True)
+            main_span.set_attribute("error_message", str(e))
+            # Re-raise the exception to be handled by the global error handler
+            raise
