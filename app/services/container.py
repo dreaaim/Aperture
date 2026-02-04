@@ -1,4 +1,30 @@
-"""Dependency injection container."""
+"""Dependency injection container.
+
+This module provides a simple dependency injection container for managing service instances.
+
+The Container class is responsible for:
+- Initializing and managing repository instances
+- Initializing and managing service instances
+- Providing access to service instances through getter methods
+
+This container follows the singleton pattern, providing a single instance
+of each service throughout the application.
+
+Example:
+    from app.services.container import container
+    
+    # Get services from the container
+    repository = container.get_repository()
+    cache_service = container.get_cache_service()
+    intent_service = container.get_intent_service()
+    model_service = container.get_model_service()
+    
+    # Use the services
+    query = "帮我写个Python脚本"
+    embedding = cache_service.embed_text(query)
+    intent = intent_service.classify_intent(query)
+    model = model_service.select_model(intent)
+"""
 
 from app.repositories.memory_repository import MemoryRepository
 from app.services.cache_service import CacheService
@@ -7,34 +33,94 @@ from app.services.model_service import ModelService
 
 
 class Container:
-    """Dependency injection container for managing service instances."""
+    """Dependency injection container for managing service instances.
+    
+    This class provides a centralized way to manage and access service instances
+    throughout the application. It ensures that each service is initialized only once
+    and that dependencies between services are properly managed.
+    
+    Attributes:
+        repository: The MemoryRepository instance
+        cache_service: The CacheService instance
+        intent_service: The IntentService instance
+        model_service: The ModelService instance
+    """
 
     def __init__(self):
-        """Initialize the container and register services."""
+        """Initialize the container and register services.
+        
+        This method initializes the repository and all services, ensuring that
+        dependencies are properly injected.
+        """
         # Initialize repository
+        # The repository is a dependency for some services
         self.repository = MemoryRepository()
         
         # Initialize services
+        # CacheService depends on the repository
         self.cache_service = CacheService(self.repository)
+        # IntentService has no dependencies
         self.intent_service = IntentService()
+        # ModelService depends on the repository
         self.model_service = ModelService(self.repository)
 
     def get_cache_service(self) -> CacheService:
-        """Get an instance of CacheService."""
+        """Get an instance of CacheService.
+        
+        Returns:
+            The CacheService instance
+            
+        Example:
+            >>> container = Container()
+            >>> cache_service = container.get_cache_service()
+            >>> type(cache_service)
+            <class 'app.services.cache_service.CacheService'>
+        """
         return self.cache_service
 
     def get_intent_service(self) -> IntentService:
-        """Get an instance of IntentService."""
+        """Get an instance of IntentService.
+        
+        Returns:
+            The IntentService instance
+            
+        Example:
+            >>> container = Container()
+            >>> intent_service = container.get_intent_service()
+            >>> type(intent_service)
+            <class 'app.services.intent_service.IntentService'>
+        """
         return self.intent_service
 
     def get_model_service(self) -> ModelService:
-        """Get an instance of ModelService."""
+        """Get an instance of ModelService.
+        
+        Returns:
+            The ModelService instance
+            
+        Example:
+            >>> container = Container()
+            >>> model_service = container.get_model_service()
+            >>> type(model_service)
+            <class 'app.services.model_service.ModelService'>
+        """
         return self.model_service
 
     def get_repository(self) -> MemoryRepository:
-        """Get an instance of MemoryRepository."""
+        """Get an instance of MemoryRepository.
+        
+        Returns:
+            The MemoryRepository instance
+            
+        Example:
+            >>> container = Container()
+            >>> repository = container.get_repository()
+            >>> type(repository)
+            <class 'app.repositories.memory_repository.MemoryRepository'>
+        """
         return self.repository
 
 
 # Create a global container instance
+# This global instance is used throughout the application to access services
 container = Container()
