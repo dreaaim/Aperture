@@ -25,18 +25,19 @@ Example:
     print(few_shot_model.model_id)  # Output: "llama-3-8b"
 """
 
-from typing import Literal, List
+from typing import Literal, List, Optional
 
 from app.config import settings
 from app.models import ModelStatus
 from app.repositories.memory_repository import MemoryRepository
 from app.utils.telemetry import get_tracer
+from app.services.base_model_service import BaseModelService
 
 # Get OpenTelemetry tracer
 tracer = get_tracer()
 
 
-class ModelService:
+class ModelService(BaseModelService):
     """Service for managing models and selecting the best one for a given intent.
     
     This service is responsible for loading model configurations, estimating task difficulty,
@@ -53,7 +54,7 @@ class ModelService:
         Args:
             repository: The memory repository instance for accessing request logs and model ratings
         """
-        self.repository = repository
+        super().__init__(repository)
         # Convert model configs from settings to ModelStatus objects
         # This allows for easy access to model properties
         self.model_catalog: List[ModelStatus] = [
@@ -61,7 +62,13 @@ class ModelService:
                 model_id=model.model_id,
                 price_per_1k_tokens=model.price_per_1k_tokens,
                 remaining_tokens=model.remaining_tokens,
-                quality_tier=model.quality_tier  # type: ignore
+                quality_tier=model.quality_tier,  # type: ignore
+                api_format=model.api_format,
+                reasoning_support=model.reasoning_support,
+                enabled=model.enabled,
+                rate_limit=model.rate_limit,
+                max_concurrency=model.max_concurrency,
+                timeout=model.timeout
             )
             for model in settings.model_catalog
         ]
@@ -182,11 +189,12 @@ class ModelService:
             
             return score
 
-    def select_model(self, intent: str) -> ModelStatus:
+    def select_model(self, intent: str, reasoning_level: Optional[str] = None) -> ModelStatus:
         """Select the highest scoring model for the given intent.
         
         Args:
             intent: The intent category to select a model for
+            reasoning_level: Optional reasoning level (low/medium/high)
             
         Returns:
             The best model for the given intent based on scoring
@@ -196,30 +204,46 @@ class ModelService:
             >>> model = service.select_model("code")
             >>> model.model_id
             "gpt-4o"  # Example result
+            
+            >>> model = service.select_model("reasoning", reasoning_level="high")
+            >>> model.model_id
+            "gpt-4o"  # Example result
         """
         # Create span for model selection
         with tracer.start_as_current_span("select_model", attributes={
-            "intent": intent
+            "intent": intent,
+            "reasoning_level": reasoning_level or "medium"
         }) as span:
             # Step 1: Estimate difficulty for the intent
             difficulty = self.estimate_difficulty(intent)
             span.set_attribute("difficulty", difficulty)
             
-            # Step 2: Score all models for this difficulty
-            scored_models = [(model, self.score_model(model, difficulty)) for model in self.model_catalog]
+            # Step 2: Filter models based on reasoning level support
+            filtered_models = [model for model in self.model_catalog if model.enabled]
+            if reasoning_level and reasoning_level != "medium":
+                filtered_models = [model for model in filtered_models if model.reasoning_support]
             
-            # Step 3: Sort models by score (descending)
+            # Step 3: Score all models for this difficulty
+            scored_models = [(model, self.score_model(model, difficulty)) for model in filtered_models]
+            
+            # Step 4: Sort models by score (descending)
             scored_models.sort(key=lambda item: item[1], reverse=True)
             
-            # Step 4: Return the highest scoring model
+            # Step 5: Return the highest scoring model
             selected_model = scored_models[0][0]
             highest_score = scored_models[0][1]
+            
+            # Set reasoning level if provided
+            if reasoning_level:
+                selected_model.reasoning_level = reasoning_level
             
             # Set span attributes
             span.set_attribute("selected_model_id", selected_model.model_id)
             span.set_attribute("selected_model_tier", selected_model.quality_tier)
+            span.set_attribute("selected_model_api_format", selected_model.api_format)
             span.set_attribute("highest_score", highest_score)
-            span.set_attribute("model_count", len(self.model_catalog))
+            span.set_attribute("model_count", len(filtered_models))
+            span.set_attribute("reasoning_level", selected_model.reasoning_level)
             
             return selected_model
 
@@ -249,3 +273,81 @@ class ModelService:
             span.set_attribute("model_count", len(self.model_catalog))
             
             return selected_model
+    
+    def get_model_by_id(self, model_id: str) -> Optional[ModelStatus]:
+        """Get a model by its ID.
+        
+        Args:
+            model_id: The ID of the model to get
+            
+        Returns:
+            The model with the given ID, or None if not found
+            
+        Example:
+            >>> service = ModelService(repository)
+            >>> model = service.get_model_by_id("gpt-4o")
+            >>> model.model_id if model else "Not found"
+            "gpt-4o"
+        """
+        # Create span for model lookup
+        with tracer.start_as_current_span("get_model_by_id", attributes={
+            "model_id": model_id
+        }) as span:
+            for model in self.model_catalog:
+                if model.model_id == model_id:
+                    span.set_attribute("model_found", True)
+                    span.set_attribute("model_tier", model.quality_tier)
+                    span.set_attribute("model_api_format", model.api_format)
+                    return model
+            span.set_attribute("model_found", False)
+            return None
+    
+    def get_available_models(self) -> List[ModelStatus]:
+        """Get all available models.
+        
+        Returns:
+            A list of all available models
+            
+        Example:
+            >>> service = ModelService(repository)
+            >>> models = service.get_available_models()
+            >>> len(models)
+            4
+        """
+        # Create span for available models lookup
+        with tracer.start_as_current_span("get_available_models") as span:
+            available_models = [model for model in self.model_catalog if model.enabled]
+            span.set_attribute("available_model_count", len(available_models))
+            span.set_attribute("total_model_count", len(self.model_catalog))
+            return available_models
+    
+    def update_model_status(self, model_id: str, **kwargs) -> bool:
+        """Update the status of a model.
+        
+        Args:
+            model_id: The ID of the model to update
+            kwargs: The attributes to update
+            
+        Returns:
+            True if the model was updated successfully, False otherwise
+            
+        Example:
+            >>> service = ModelService(repository)
+            >>> service.update_model_status("gpt-4o", enabled=False)
+            True
+        """
+        # Create span for model status update
+        with tracer.start_as_current_span("update_model_status", attributes={
+            "model_id": model_id,
+            "update_attributes": list(kwargs.keys())
+        }) as span:
+            for model in self.model_catalog:
+                if model.model_id == model_id:
+                    for key, value in kwargs.items():
+                        if hasattr(model, key):
+                            setattr(model, key, value)
+                            span.set_attribute(f"updated_{key}", value)
+                    span.set_attribute("update_success", True)
+                    return True
+            span.set_attribute("update_success", False)
+            return False

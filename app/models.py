@@ -83,21 +83,43 @@ class ModelStatus(BaseModel):
             - "small": Smaller, faster, cheaper models
             - "medium": Balanced models
             - "large": Larger, more capable, more expensive models
+        api_format: API format type
+        reasoning_support: Whether the model supports reasoning levels
+        enabled: Whether the model is enabled
+        rate_limit: Rate limit per minute
+        max_concurrency: Maximum concurrent requests
+        timeout: Request timeout in seconds
+        reasoning_level: Current reasoning level
+        processing_time: Processing time in milliseconds
         
     Example:
         >>> ModelStatus(
         ...     model_id="gpt-3.5-turbo",
         ...     price_per_1k_tokens=0.0015,
         ...     remaining_tokens=100000,
-        ...     quality_tier="medium"
+        ...     quality_tier="medium",
+        ...     api_format="openai",
+        ...     reasoning_support=False,
+        ...     enabled=True,
+        ...     rate_limit=60,
+        ...     max_concurrency=10,
+        ...     timeout=30
         ... )
-        ModelStatus(model_id="gpt-3.5-turbo", price_per_1k_tokens=0.0015, remaining_tokens=100000, quality_tier="medium")
+        ModelStatus(model_id="gpt-3.5-turbo", price_per_1k_tokens=0.0015, remaining_tokens=100000, quality_tier="medium", ...)
     """
 
     model_id: str  # Unique identifier for the model
     price_per_1k_tokens: float  # Price per 1000 tokens
     remaining_tokens: int  # Remaining token quota
     quality_tier: Literal["small", "medium", "large"]  # Model quality tier
+    api_format: str = "openai"  # API format type
+    reasoning_support: bool = False  # Whether the model supports reasoning levels
+    enabled: bool = True  # Whether the model is enabled
+    rate_limit: int = 60  # Rate limit per minute
+    max_concurrency: int = 10  # Maximum concurrent requests
+    timeout: int = 30  # Request timeout in seconds
+    reasoning_level: str = "medium"  # Current reasoning level
+    processing_time: float = 0.0  # Processing time in milliseconds
 
 
 class RequestLog(BaseModel):

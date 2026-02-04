@@ -86,6 +86,12 @@ class ModelConfig(BaseSettings):
     - price_per_1k_tokens: Price per 1000 tokens (in dollars)
     - remaining_tokens: Remaining tokens quota for the model
     - quality_tier: Quality tier of the model (small, medium, large)
+    - api_format: API format type (openai, claude, gemini, etc.)
+    -推理_level: Support for reasoning levels (high, medium, low)
+    - enabled: Whether the model is enabled
+    - rate_limit: Rate limit per minute
+    - max_concurrency: Maximum concurrent requests
+    - timeout: Request timeout in seconds
     """
 
     # Unique identifier for the model
@@ -99,6 +105,24 @@ class ModelConfig(BaseSettings):
     
     # Quality tier of the model (small, medium, large)
     quality_tier: str
+    
+    # API format type
+    api_format: str = "openai"
+    
+    # Support for reasoning levels
+    reasoning_support: bool = False
+    
+    # Whether the model is enabled
+    enabled: bool = True
+    
+    # Rate limit per minute
+    rate_limit: int = 60
+    
+    # Maximum concurrent requests
+    max_concurrency: int = 10
+    
+    # Request timeout in seconds
+    timeout: int = 30
 
 
 class Settings(BaseSettings):
@@ -135,24 +159,48 @@ class Settings(BaseSettings):
             price_per_1k_tokens=5.0,
             remaining_tokens=400000,
             quality_tier="large",
+            api_format="openai",
+            reasoning_support=True,
+            enabled=True,
+            rate_limit=60,
+            max_concurrency=10,
+            timeout=30
         ),
         ModelConfig(
             model_id="claude-3.5-sonnet",
             price_per_1k_tokens=3.5,
             remaining_tokens=300000,
             quality_tier="large",
+            api_format="claude",
+            reasoning_support=True,
+            enabled=True,
+            rate_limit=60,
+            max_concurrency=10,
+            timeout=30
         ),
         ModelConfig(
             model_id="gpt-4o-mini",
             price_per_1k_tokens=0.8,
             remaining_tokens=600000,
             quality_tier="medium",
+            api_format="openai",
+            reasoning_support=False,
+            enabled=True,
+            rate_limit=120,
+            max_concurrency=20,
+            timeout=20
         ),
         ModelConfig(
             model_id="llama-3-8b",
             price_per_1k_tokens=0.2,
             remaining_tokens=1000000,
             quality_tier="small",
+            api_format="openai",
+            reasoning_support=False,
+            enabled=True,
+            rate_limit=240,
+            max_concurrency=30,
+            timeout=15
         ),
     ]
     
