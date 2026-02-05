@@ -1,0 +1,189 @@
+"""Gateway service for handling user queries with intelligent routing.
+
+This module provides a gateway service that implements the complete processing flow:
+1. Semantic retrieval and intent recognition
+2. Cache decision making
+3. Few-shot learning injection
+4. Dynamic model routing
+5. Execution with fallback and feedback recording
+
+Example:
+    from app.services.gateway_service import GatewayService
+    from app.repositories.memory_repository import MemoryRepository
+    from app.services.model_service import ModelService
+    from app.services.routing_service import RoutingService
+    
+    repository = MemoryRepository()
+    model_service = ModelService(repository)
+    routing_service = RoutingService(model_service)
+    gateway_service = GatewayService(model_service, routing_service)
+    
+    # Process a user query
+    result = await gateway_service.process_query("帮我写个Python脚本")
+    print(result)
+"""
+
+import time
+import asyncio
+from typing import Dict, Any, Optional, List
+from app.services.model_service import ModelService
+from app.services.routing_service import RoutingService
+from app.services.cache_service import CacheService
+from app.services.enhanced_intent_service import EnhancedIntentService
+from app.services.monitoring_service import MonitoringService
+from app.utils.telemetry import get_tracer
+
+# Get OpenTelemetry tracer
+tracer = get_tracer()
+
+
+class GatewayService:
+    """Gateway service for handling user queries with intelligent routing.
+    
+    This service implements the complete processing flow for user queries,
+    including semantic retrieval, cache decision, few-shot injection,
+    dynamic routing, and execution with fallback.
+    
+    Attributes:
+        model_service: The model service instance
+        routing_service: The routing service instance
+        cache_service: The cache service instance
+        intent_service: The enhanced intent service instance
+        monitoring_service: The monitoring service instance
+    """
+    
+    def __init__(self, model_service: ModelService, routing_service: RoutingService):
+        """Initialize the gateway service.
+        
+        Args:
+            model_service: The model service instance
+            routing_service: The routing service instance
+        """
+        self.model_service = model_service
+        self.routing_service = routing_service
+        self.cache_service = CacheService(model_service.repository)
+        self.intent_service = EnhancedIntentService()
+        self.monitoring_service = MonitoringService()
+    
+    async def process_query(self, user_query: str) -> Dict[str, Any]:
+        """Process a user query through the complete gateway flow.
+        
+        Args:
+            user_query: The user's query string
+            
+        Returns:
+            The processed result
+        """
+        with tracer.start_as_current_span("process_query", attributes={
+            "query": user_query[:50]
+        }) as span:
+            start_time = time.time()
+            
+            # --- Phase 1: Semantic retrieval and intent recognition ---
+            # Search for similar queries in cache
+            query_embedding = self.cache_service.embed_text(user_query)
+            cached_entry, similarity = self.cache_service.find_similar(query_embedding)
+            history_answer = cached_entry.answer if cached_entry else ''
+            
+            # Get intent and complexity
+            intent_result = self.intent_service.classify_intent(user_query)
+            intent = intent_result.get('intent', 'general')
+            complexity = self.routing_service.get_intent_complexity(user_query)
+            
+            span.set_attribute("intent", intent)
+            span.set_attribute("complexity", complexity)
+            span.set_attribute("similarity", similarity)
+            
+            # --- Phase 2: Cache decision ---\n
+            if similarity >= 0.95:
+                # Direct cache hit, return immediately
+                span.set_attribute("cache_hit", True)
+                span.set_attribute("cache_type", "direct")
+                
+                # Record usage
+                await self.monitoring_service.record_model_usage(
+                    model_id="cache-hit",
+                    user_id="system",
+                    request_time=0.0,
+                    response_time=time.time() - start_time,
+                    tokens_used=0,
+                    status="success"
+                )
+                
+                return {
+                    "content": history_answer,
+                    "type": "CACHE_HIT",
+                    "intent": intent,
+                    "confidence": intent_result.get('confidence', 0.5)
+                }
+            
+            # Prepare messages for model
+            messages = [{"role": "user", "content": user_query}]
+            
+            # --- Phase 3: Few-shot injection ---\n
+            if 0.80 <= similarity < 0.95:
+                # Inject historical Q&A as few-shot example
+                few_shot = f"Example Q: {vector_result.get('query', '')} A: {history_answer}"
+                messages.insert(0, {"role": "system", "content": f"Reference: {few_shot}"})
+                
+                # Use small model for few-shot learning
+                target_model = self.model_service.select_few_shot_model()
+                span.set_attribute("few_shot_injection", True)
+                span.set_attribute("target_model", target_model.model_id)
+            else:
+                # --- Phase 4: Dynamic routing ---\n
+                # Use routing service to select optimal model
+                target_model = self.routing_service.get_model_by_weight(intent, complexity=complexity)
+                span.set_attribute("dynamic_routing", True)
+                span.set_attribute("target_model", target_model.model_id)
+            
+            # --- Phase 5: Execution and feedback recording ---\n
+            # Execute with fallback
+            response = await self.routing_service.execute_with_fallback(
+                target_model.model_id, 
+                messages
+            )
+            
+            duration = time.time() - start_time
+            
+            # Record usage
+            self.monitoring_service.record_model_usage(
+                model_id=response.get('model', target_model.model_id),
+                user_id="system",
+                request_time=0.0,
+                response_time=duration,
+                tokens_used=response.get('usage', {}).get('total_tokens', 0),
+                status="success"
+            )
+            
+            # Set final span attributes
+            span.set_attribute("execution_time", duration)
+            span.set_attribute("response_model", response.get('model', target_model.model_id))
+            span.set_attribute("tokens_used", response.get('usage', {}).get('total_tokens', 0))
+            span.set_attribute("success", True)
+            
+            return {
+                "content": response.get('text', ''),
+                "type": "MODEL_RESPONSE",
+                "intent": intent,
+                "confidence": intent_result.get('confidence', 0.5),
+                "model": response.get('model', target_model.model_id),
+                "usage": response.get('usage', {})
+            }
+    
+    async def batch_process_queries(self, queries: list) -> list:
+        """Process multiple queries in batch.
+        
+        Args:
+            queries: List of user queries
+            
+        Returns:
+            List of processed results
+        """
+        tasks = []
+        for query in queries:
+            task = self.process_query(query)
+            tasks.append(task)
+        
+        results = await asyncio.gather(*tasks)
+        return results

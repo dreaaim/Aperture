@@ -65,6 +65,7 @@ class ChatLog(Base):
     total_cost = Column(DECIMAL(10, 6))
     latency_ms = Column(Integer)
     status = Column(String(20), default="SUCCESS", index=True)
+    security_flag = Column(String(50), index=True)  # Security threat type, e.g., "injection", "sensitive_info"
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
 
 

@@ -23,10 +23,15 @@ Example:
 """
 
 import random
+import time
+import asyncio
 from typing import List, Optional, Dict, Any
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.services.model_service import ModelService
+from app.services.enhanced_intent_service import EnhancedIntentService
 from app.models import ModelStatus
 from app.utils.telemetry import get_tracer
+from app.config import settings
 
 # Get OpenTelemetry tracer
 tracer = get_tracer()
@@ -42,23 +47,68 @@ class RoutingService:
             model_service: The model service instance
         """
         self.model_service = model_service
+        self.intent_service = EnhancedIntentService()
+        self.active_requests: Dict[str, int] = {}  # 活跃请求计数
+        self.model_health: Dict[str, bool] = {}  # 模型健康状态
     
-    def get_model_by_weight(self, intent: str, reasoning_level: Optional[str] = None) -> ModelStatus:
+    def get_intent_complexity(self, query: str) -> float:
+        """Calculate intent complexity score based on query.
+        
+        Args:
+            query: The user query string
+            
+        Returns:
+            A complexity score between 0.0 and 1.0
+        """
+        with tracer.start_as_current_span("get_intent_complexity", attributes={
+            "query": query[:50]
+        }) as span:
+            # Get intent classification
+            intent_result = self.intent_service.classify_intent(query)
+            intent = intent_result.get("intent", "general")
+            confidence = intent_result.get("confidence", 0.5)
+            
+            # Map intent to base complexity
+            complexity_map = {
+                "code": 0.8,
+                "reasoning": 0.7,
+                "creative": 0.6,
+                "chat": 0.3,
+                "general": 0.4
+            }
+            
+            base_complexity = complexity_map.get(intent, 0.4)
+            # Adjust based on confidence
+            complexity = base_complexity * (0.5 + confidence * 0.5)
+            
+            # Set span attributes
+            span.set_attribute("intent", intent)
+            span.set_attribute("confidence", confidence)
+            span.set_attribute("complexity", complexity)
+            
+            return complexity
+    
+    def get_model_by_weight(self, intent: str, reasoning_level: Optional[str] = None, complexity: Optional[float] = None) -> ModelStatus:
         """Get a model using weighted random routing.
         
         Args:
             intent: The intent category
             reasoning_level: Optional reasoning level
+            complexity: Optional complexity score (0.0-1.0)
             
         Returns:
             A model selected based on weights
         """
         with tracer.start_as_current_span("get_model_by_weight", attributes={
             "intent": intent,
-            "reasoning_level": reasoning_level or "medium"
+            "reasoning_level": reasoning_level or "medium",
+            "complexity": complexity or 0.5
         }) as span:
             # Get available models
             available_models = self.model_service.get_available_models()
+            
+            # Filter out unhealthy models
+            available_models = [model for model in available_models if self.model_health.get(model.model_id, True)]
             
             # Filter models based on reasoning level support
             if reasoning_level and reasoning_level != "medium":
@@ -75,7 +125,7 @@ class RoutingService:
             
             for model in available_models:
                 # Calculate weight based on multiple factors
-                weight = self._calculate_model_weight(model, intent)
+                weight = self._calculate_model_weight(model, intent, complexity)
                 weighted_models.append((model, weight))
                 total_weight += weight
             
@@ -86,52 +136,100 @@ class RoutingService:
             if reasoning_level:
                 selected_model.reasoning_level = reasoning_level
             
+            # Increment active requests
+            self.active_requests[selected_model.model_id] = self.active_requests.get(selected_model.model_id, 0) + 1
+            
             # Set span attributes
             span.set_attribute("selected_model_id", selected_model.model_id)
             span.set_attribute("selected_model_weight", next(w for m, w in weighted_models if m.model_id == selected_model.model_id))
             span.set_attribute("model_count", len(available_models))
+            span.set_attribute("active_requests", self.active_requests.get(selected_model.model_id, 0))
             
             return selected_model
     
-    def _calculate_model_weight(self, model: ModelStatus, intent: str) -> float:
+    def _calculate_model_weight(self, model: ModelStatus, intent: str, complexity: Optional[float] = None) -> float:
         """Calculate weight for a model based on its properties and intent.
         
         Args:
             model: The model to calculate weight for
             intent: The intent category
+            complexity: Optional complexity score (0.0-1.0)
             
         Returns:
             The calculated weight
         """
-        weight = 1.0
+        complexity = complexity or 0.5
         
-        # Quality tier weight
-        tier_weights = {
-            "large": 1.5,
+        # Get weights from settings
+        weights = settings.router_weights
+        
+        # 1. Historical satisfaction (0-1)
+        # Using model rating as satisfaction score
+        f_sat = getattr(model, 'rating', 0.8)  # Default to 0.8 for new models (cold start)
+        
+        # 2. Price factor (normalized)
+        # Get all models to find price range
+        all_models = self.model_service.get_available_models()
+        if all_models:
+            min_price = min(m.price_per_1k_tokens for m in all_models if m.price_per_1k_tokens > 0)
+            max_price = max(m.price_per_1k_tokens for m in all_models)
+            if max_price > min_price:
+                # Normalize price: lower price = higher score
+                f_cost = 1.0 - ((model.price_per_1k_tokens - min_price) / (max_price - min_price))
+            else:
+                f_cost = 1.0
+        else:
+            f_cost = 1.0
+        
+        # 3. Quota health (remaining tokens / total limit)
+        total_limit = getattr(model, 'total_limit', 1000000)  # Default total limit
+        f_budget = min(1.0, model.remaining_tokens / total_limit) if total_limit > 0 else 0.5
+        
+        # 4. Concurrency factor (active requests penalty)
+        active_requests = self.active_requests.get(model.model_id, 0)
+        max_concurrency = getattr(model, 'max_concurrency', 10)
+        # Normalize active requests to 0-1 range
+        concurrency_ratio = min(1.0, active_requests / max_concurrency)
+        concurrency_penalty = 1.0 - (concurrency_ratio * 0.5)  # Max 50% penalty
+        
+        # 5. Quality tier matching
+        tier_score = 1.0
+        tier_match = {
+            "large": 1.0 + complexity * 0.5,  # Higher complexity prefers larger models
             "medium": 1.0,
-            "small": 0.6
+            "small": 1.0 - complexity * 0.3  # Lower complexity can use smaller models
         }
-        weight *= tier_weights.get(model.quality_tier, 1.0)
+        tier_score = tier_match.get(model.quality_tier, 1.0)
         
-        # Price weight (inverse)
-        price_weight = max(0.5, 1.0 / (model.price_per_1k_tokens / 10 + 1))
-        weight *= price_weight
+        # Dynamic weight adjustment based on complexity
+        # For high complexity, prioritize satisfaction and quality
+        # For low complexity, prioritize cost efficiency
+        adjusted_weights = {
+            "satisfaction": weights.history * (1 + complexity * 0.5),
+            "cost": weights.price * (1 - complexity * 0.3),
+            "quota": weights.quota,
+            "quality": weights.difficulty_match
+        }
         
-        # Quota weight
-        quota_weight = min(1.5, model.remaining_tokens / 100000)
-        weight *= quota_weight
+        # Calculate final score
+        score = (
+            adjusted_weights["satisfaction"] * f_sat +
+            adjusted_weights["cost"] * f_cost +
+            adjusted_weights["quota"] * f_budget +
+            adjusted_weights["quality"] * tier_score
+        ) * concurrency_penalty
         
         # Intent-specific adjustments
         if intent == "code" and model.quality_tier == "large":
-            weight *= 1.2
+            score *= 1.2
         elif intent == "chat" and model.quality_tier == "small":
-            weight *= 1.1
+            score *= 1.1
         
         # API format adjustments
         if model.api_format == "openai":
-            weight *= 1.1  # Slightly prefer OpenAI for compatibility
+            score *= 1.1  # Slightly prefer OpenAI for compatibility
         
-        return weight
+        return score
     
     def _weighted_random_selection(self, weighted_models: List[tuple], total_weight: float) -> ModelStatus:
         """Perform weighted random selection.
@@ -163,27 +261,132 @@ class RoutingService:
         # Fallback to the last model
         return weighted_models[-1][0]
     
-    def get_models_by_priority(self, intent: str, limit: int = 3) -> List[ModelStatus]:
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=0.5, max=10),
+        retry=retry_if_exception_type(Exception),
+        reraise=True
+    )
+    async def execute_with_fallback(self, model_id: str, messages: list) -> dict:
+        """Execute model call with automatic retry and fallback.
+        
+        Args:
+            model_id: The model ID to call
+            messages: The messages to send
+            
+        Returns:
+            The model response
+        """
+        with tracer.start_as_current_span("execute_with_fallback", attributes={
+            "model_id": model_id
+        }) as span:
+            try:
+                # Get the model adapter and execute
+                # Note: This is a placeholder, actual implementation would use the adapter factory
+                # For now, we'll simulate a successful response
+                span.set_attribute("attempt", 1)
+                
+                # Simulate model execution
+                await asyncio.sleep(0.01)  # Simulate network delay
+                
+                # Decrement active requests
+                if model_id in self.active_requests:
+                    self.active_requests[model_id] -= 1
+                    if self.active_requests[model_id] <= 0:
+                        del self.active_requests[model_id]
+                
+                # Mark model as healthy
+                self.model_health[model_id] = True
+                
+                # Return mock response
+                response = {
+                    "model": model_id,
+                    "text": "This is a mock response from the model",
+                    "usage": {
+                        "total_tokens": 100
+                    }
+                }
+                
+                span.set_attribute("success", True)
+                span.set_attribute("response_model", model_id)
+                
+                return response
+                
+            except Exception as e:
+                span.set_attribute("error", str(e))
+                
+                # Mark model as unhealthy
+                self.model_health[model_id] = False
+                
+                # Decrement active requests
+                if model_id in self.active_requests:
+                    self.active_requests[model_id] -= 1
+                    if self.active_requests[model_id] <= 0:
+                        del self.active_requests[model_id]
+                
+                # Circuit breaker: Mark model as temporarily unavailable
+                await self._circuit_break(model_id)
+                
+                # Fallback to default model
+                span.set_attribute("fallback", True)
+                fallback_model = "gpt-4o-mini"
+                
+                # Decrement active requests for fallback
+                if fallback_model in self.active_requests:
+                    self.active_requests[fallback_model] -= 1
+                    if self.active_requests[fallback_model] <= 0:
+                        del self.active_requests[fallback_model]
+                
+                # Return mock fallback response
+                return {
+                    "model": fallback_model,
+                    "text": "This is a fallback response from the default model",
+                    "usage": {
+                        "total_tokens": 100
+                    }
+                }
+    
+    async def _circuit_break(self, model_id: str):
+        """Mark a model as temporarily unavailable (circuit breaker).
+        
+        Args:
+            model_id: The model ID to mark as unavailable
+        """
+        # Placeholder for circuit breaker implementation
+        # In a real system, this would:
+        # 1. Set a timeout in Redis for the model
+        # 2. Track failure counts
+        # 3. Implement half-open state for recovery testing
+        self.model_health[model_id] = False
+        # Simulate circuit breaker timeout
+        await asyncio.sleep(0.1)
+    
+    def get_models_by_priority(self, intent: str, limit: int = 3, complexity: Optional[float] = None) -> List[ModelStatus]:
         """Get models ordered by priority.
         
         Args:
             intent: The intent category
             limit: Maximum number of models to return
+            complexity: Optional complexity score (0.0-1.0)
             
         Returns:
             A list of models ordered by priority
         """
         with tracer.start_as_current_span("get_models_by_priority", attributes={
             "intent": intent,
-            "limit": limit
+            "limit": limit,
+            "complexity": complexity or 0.5
         }) as span:
             # Get available models
             available_models = self.model_service.get_available_models()
             
+            # Filter out unhealthy models
+            available_models = [model for model in available_models if self.model_health.get(model.model_id, True)]
+            
             # Calculate weights
             weighted_models = []
             for model in available_models:
-                weight = self._calculate_model_weight(model, intent)
+                weight = self._calculate_model_weight(model, intent, complexity)
                 weighted_models.append((model, weight))
             
             # Sort by weight (descending)

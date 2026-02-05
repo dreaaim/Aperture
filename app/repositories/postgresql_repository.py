@@ -57,6 +57,7 @@ from app.database import SessionLocal, init_db
 from app.database.models import LLMModel, SemanticCache, ChatLog, UserFeedback
 from app.models import CacheEntry, RequestLog
 from app.utils.telemetry import get_tracer
+from app.utils.logger import default_logger
 
 # Get OpenTelemetry tracer
 tracer = get_tracer()
@@ -334,3 +335,36 @@ class PostgreSQLRepository:
             raise
         finally:
             db.close()
+    
+    def update_request_log_embedding(self, request_id: str, embedding: List[float]):
+        """Update request log with embedding.
+        
+        Args:
+            request_id: The request ID
+            embedding: The embedding vector
+        """
+        with tracer.start_as_current_span("update_request_log_embedding", attributes={
+            "request_id": request_id,
+            "embedding_dim": len(embedding)
+        }) as span:
+            db = self.session_factory()
+            try:
+                # Update ChatLog with embedding
+                chat_log = db.query(ChatLog).filter(
+                    ChatLog.request_id == uuid.UUID(request_id)
+                ).first()
+                
+                if chat_log:
+                    chat_log.query_embedding = embedding
+                    db.commit()
+                    span.set_attribute("embedding_updated", True)
+                    default_logger.info(f"Updated embedding for request {request_id}")
+                else:
+                    span.set_attribute("error", f"Request log not found: {request_id}")
+                    default_logger.warning(f"Request log not found for {request_id}")
+            except Exception as e:
+                db.rollback()
+                span.set_attribute("error", str(e)[:100])
+                default_logger.error(f"Error updating request log embedding: {e}")
+            finally:
+                db.close()

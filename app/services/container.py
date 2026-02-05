@@ -26,11 +26,13 @@ Example:
     model = model_service.select_model(intent)
 """
 
-from app.repositories.postgresql_repository import PostgreSQLRepository
+from app.repositories.memory_repository import MemoryRepository
 from app.services.cache_service import CacheService
 from app.services.intent_service import IntentService
 from app.services.enhanced_intent_service import EnhancedIntentService
 from app.services.model_service import ModelService
+from app.services.routing_service import RoutingService
+from app.services.gateway_service import GatewayService
 from app.adapters.types.llm_adapter import LLMAdapter
 from app.adapters.types.embedding_adapter import EmbeddingAdapter
 from app.adapters.types.reranker_adapter import RerankerAdapter
@@ -64,7 +66,7 @@ class Container:
         with tracer.start_as_current_span("container_init") as span:
             # Initialize repository
             # The repository is a dependency for some services
-            self.repository = PostgreSQLRepository()
+            self.repository = MemoryRepository()
             # Initialize default models
             self.repository.initialize_models()
             span.set_attribute("repository_initialized", True)
@@ -82,6 +84,12 @@ class Container:
             # ModelService depends on the repository
             self.model_service = ModelService(self.repository)
             span.set_attribute("model_service_initialized", True)
+            # RoutingService depends on model_service
+            self.routing_service = RoutingService(self.model_service)
+            span.set_attribute("routing_service_initialized", True)
+            # GatewayService depends on model_service and routing_service
+            self.gateway_service = GatewayService(self.model_service, self.routing_service)
+            span.set_attribute("gateway_service_initialized", True)
             
             # Initialize model adapters
             # Get models for adapters
@@ -106,7 +114,7 @@ class Container:
                 span.set_attribute("adapter_initialization_error", str(e)[:100])
             
             # Set span attributes
-            span.set_attribute("services_initialized", 5)
+            span.set_attribute("services_initialized", 7)
 
     def get_cache_service(self) -> CacheService:
         """Get an instance of CacheService.
@@ -176,21 +184,21 @@ class Container:
             span.set_attribute("service_type", "ModelService")
             return self.model_service
 
-    def get_repository(self) -> PostgreSQLRepository:
-        """Get an instance of PostgreSQLRepository.
+    def get_repository(self) -> MemoryRepository:
+        """Get an instance of MemoryRepository.
         
         Returns:
-            The PostgreSQLRepository instance
+            The MemoryRepository instance
             
         Example:
             >>> container = Container()
             >>> repository = container.get_repository()
             >>> type(repository)
-            <class 'app.repositories.postgresql_repository.PostgreSQLRepository'>
+            <class 'app.repositories.memory_repository.MemoryRepository'>
         """
         # Create span for repository retrieval
         with tracer.start_as_current_span("get_repository") as span:
-            span.set_attribute("service_type", "PostgreSQLRepository")
+            span.set_attribute("service_type", "MemoryRepository")
             return self.repository
     
     def get_llm_adapter(self) -> LLMAdapter:
@@ -243,6 +251,40 @@ class Container:
         with tracer.start_as_current_span("get_reranker_adapter") as span:
             span.set_attribute("adapter_type", "RerankerAdapter")
             return self.reranker_adapter
+    
+    def get_routing_service(self) -> RoutingService:
+        """Get an instance of RoutingService.
+        
+        Returns:
+            The RoutingService instance
+            
+        Example:
+            >>> container = Container()
+            >>> routing_service = container.get_routing_service()
+            >>> type(routing_service)
+            <class 'app.services.routing_service.RoutingService'>
+        """
+        # Create span for routing service retrieval
+        with tracer.start_as_current_span("get_routing_service") as span:
+            span.set_attribute("service_type", "RoutingService")
+            return self.routing_service
+    
+    def get_gateway_service(self) -> GatewayService:
+        """Get an instance of GatewayService.
+        
+        Returns:
+            The GatewayService instance
+            
+        Example:
+            >>> container = Container()
+            >>> gateway_service = container.get_gateway_service()
+            >>> type(gateway_service)
+            <class 'app.services.gateway_service.GatewayService'>
+        """
+        # Create span for gateway service retrieval
+        with tracer.start_as_current_span("get_gateway_service") as span:
+            span.set_attribute("service_type", "GatewayService")
+            return self.gateway_service
 
 
 # Create a global container instance

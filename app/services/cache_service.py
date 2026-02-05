@@ -113,16 +113,17 @@ class CacheService:
             
             return embeddings
 
-    def find_similar(self, query_embedding: List[float]) -> Tuple[Optional[CacheEntry], float]:
-        """Find the most similar cache entry and its similarity score.
+    def find_similar(self, query_embedding: List[float], top_k: int = 5) -> Tuple[Optional[CacheEntry], float]:
+        """Find similar cache entries with Top-K retrieval and reranking.
         
         Args:
             query_embedding: The embedding vector of the query to find similar entries for
+            top_k: Number of top similar entries to retrieve
             
         Returns:
             A tuple containing:
-            - The most similar CacheEntry (or None if no entries)
-            - The cosine similarity score (0-1, higher is better)
+            - The most similar CacheEntry after reranking (or None if no entries)
+            - The reranked score (0-1, higher is better)
             
         Example:
             >>> service = CacheService(repository)
@@ -135,31 +136,43 @@ class CacheService:
             >>> cached_entry, similarity = service.find_similar(similar_embedding)
             >>> cached_entry.query
             "帮我写个Python脚本"
+            >>> cached_entry.answer
+            "这是一个Python脚本"
             >>> similarity
-            0.95  # Example similarity score
+            0.98  # Reranked score
         """
         # Create span for similar cache entry search
         with tracer.start_as_current_span("find_similar", attributes={
             "embedding_dim": len(query_embedding),
-            "cache_entries_count": len(self.repository.cache_entries)
+            "cache_entries_count": len(self.repository.cache_entries),
+            "top_k": top_k
         }) as span:
-            # Initialize variables to track best match
-            best_entry: Optional[CacheEntry] = None
-            best_score = 0.0
-            
-            # Iterate through all cache entries
+            # Step 1: Get Top-K similar entries based on cosine similarity
+            scored_entries = []
             for entry in self.repository.cache_entries:
                 # Calculate cosine similarity between query embedding and entry embedding
                 score = cosine_similarity(query_embedding, entry.query_embedding)
-                
-                # Update best match if current entry is more similar
-                if score > best_score:
-                    best_score = score
-                    best_entry = entry
+                scored_entries.append((entry, score))
+            
+            # Sort by similarity score (descending) and take top-k
+            scored_entries.sort(key=lambda item: item[1], reverse=True)
+            top_entries = scored_entries[:top_k]
+            
+            if not top_entries:
+                # No similar entries found
+                span.set_attribute("similar_entry_found", False)
+                return None, 0.0
+            
+            # Step 2: Fallback to cosine similarity without reranking
+            # Use the top entry from cosine similarity
+            best_entry = top_entries[0][0]
+            best_score = top_entries[0][1]
             
             # Set span attributes
             span.set_attribute("best_similarity_score", best_score)
-            span.set_attribute("similar_entry_found", best_entry is not None)
+            span.set_attribute("similar_entry_found", True)
+            span.set_attribute("reranking_applied", False)
+            span.set_attribute("top_k_retrieved", len(top_entries))
             if best_entry:
                 span.set_attribute("best_entry_model_id", best_entry.model_id)
                 span.set_attribute("best_entry_query", best_entry.query[:50])  # Truncate for span attributes

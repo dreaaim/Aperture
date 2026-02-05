@@ -150,6 +150,12 @@ class ModelService(BaseModelService):
             # Get historical rating score for the model (0-1)
             history_score = self.repository.get_model_rating(model.model_id)
             
+            # Apply cold start strategy for new models
+            if history_score == 0.0:
+                history_score = self.get_initial_model_rating(model.model_id)
+                span.set_attribute("cold_start", True)
+                span.set_attribute("initial_rating", history_score)
+            
             # Calculate price score (inverse of price, so lower price = higher score)
             price_score = 1 / model.price_per_1k_tokens
             
@@ -179,6 +185,10 @@ class ModelService(BaseModelService):
                 + difficulty_score * weights.difficulty_match
             )
             
+            # Add exploration bonus for new models
+            exploration_bonus = self.get_exploration_budget(model.model_id)
+            score = score * (1 - exploration_bonus) + exploration_bonus * 0.7
+            
             # Set span attributes
             span.set_attribute("history_score", history_score)
             span.set_attribute("price_score", price_score)
@@ -189,6 +199,7 @@ class ModelService(BaseModelService):
             span.set_attribute("price_weight", weights.price)
             span.set_attribute("quota_weight", weights.quota)
             span.set_attribute("difficulty_weight", weights.difficulty_match)
+            span.set_attribute("exploration_bonus", exploration_bonus)
             
             return score
 
@@ -304,6 +315,77 @@ class ModelService(BaseModelService):
                     return model
             span.set_attribute("model_found", False)
             return None
+    
+    def get_initial_model_rating(self, model_id: str) -> float:
+        """Get initial rating for new models (cold start strategy).
+        
+        Args:
+            model_id: The ID of the model
+            
+        Returns:
+            Initial rating score (0.0-1.0)
+        """
+        with tracer.start_as_current_span("get_initial_model_rating", attributes={
+            "model_id": model_id
+        }) as span:
+            # Check if model exists in catalog
+            model = self.get_model_by_id(model_id)
+            if not model:
+                span.set_attribute("model_not_found", True)
+                return 0.5
+            
+            # Base initial rating on model tier
+            tier_rating = {
+                "large": 0.85,
+                "medium": 0.75,
+                "small": 0.65
+            }
+            
+            initial_rating = tier_rating.get(model.quality_tier, 0.7)
+            
+            # Adjust based on model type
+            if model.model_type == "embedding":
+                initial_rating *= 0.9
+            elif model.model_type == "reranker":
+                initial_rating *= 0.85
+            
+            span.set_attribute("initial_rating", initial_rating)
+            span.set_attribute("model_tier", model.quality_tier)
+            
+            return initial_rating
+    
+    def get_exploration_budget(self, model_id: str) -> float:
+        """Get exploration budget for new models (Multi-Armed Bandit strategy).
+        
+        Args:
+            model_id: The ID of the model
+            
+        Returns:
+            Exploration budget (0.0-1.0)
+        """
+        with tracer.start_as_current_span("get_exploration_budget", attributes={
+            "model_id": model_id
+        }) as span:
+            # Get model
+            model = self.get_model_by_id(model_id)
+            if not model:
+                span.set_attribute("model_not_found", True)
+                return 0.0
+            
+            # Check if model has historical data
+            historical_rating = self.repository.get_model_rating(model_id)
+            
+            if historical_rating == 0.0:
+                # New model, high exploration budget
+                exploration_budget = 0.2  # 20% of traffic
+            else:
+                # Existing model, lower exploration budget
+                exploration_budget = max(0.05, 0.15 * (1 - historical_rating))
+            
+            span.set_attribute("exploration_budget", exploration_budget)
+            span.set_attribute("historical_rating", historical_rating)
+            
+            return exploration_budget
     
     def get_available_models(self) -> List[ModelStatus]:
         """Get all available models.
