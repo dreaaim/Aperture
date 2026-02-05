@@ -39,7 +39,7 @@ from app.adapters.providers.claude_adapter import ClaudeAdapter
 from app.adapters.providers.gemini_adapter import GeminiAdapter
 
 # Adapter factory
-from app.adapters.adapter_factory import AdapterFactory
+from app.adapters.adapter_factory import UnifiedAdapterFactory
 
 __all__ = [
     # Core adapters
@@ -49,5 +49,5 @@ __all__ = [
     # Provider-specific adapters
     "OpenAIAdapter", "ClaudeAdapter", "GeminiAdapter",
     # Adapter factory
-    "AdapterFactory"
+    "UnifiedAdapterFactory"
 ]

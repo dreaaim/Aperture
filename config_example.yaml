@@ -1,0 +1,246 @@
+# Aperture LLM Gateway 配置示例文件
+#
+# 这是一个配置模板文件，您可以复制为 config.yaml 并根据实际情况修改
+# 配置优先级：环境变量 > config.yaml 文件 > 默认值
+
+# 数据库配置
+# 注意：如果设置了 database_url，则会覆盖下面的数据库配置
+# database_url: postgresql://postgres:postgres@localhost:5432/aperture
+database:
+  # 数据库驱动 (postgresql, mysql, sqlite, etc.)
+  driver: postgresql
+  # 数据库主机地址
+  host: localhost
+  # 数据库端口
+  port: 5432
+  # 数据库名称
+  database: aperture
+  # 数据库用户名
+  username: postgres
+  # 数据库密码
+  password: postgres
+  # 连接池大小
+  pool_size: 10
+  # 连接池超时时间（秒）
+  pool_timeout: 30
+  # 连接池回收时间（秒）
+  pool_recycle: 3600
+  # 是否打印 SQL 语句
+  echo: false
+
+# 模型服务商配置
+model_providers:
+  # 服务商配置字典
+  providers:
+    # OpenAI 配置
+    openai:
+      # API 基础 URL
+      base_url: https://api.openai.com/v1
+      # API 密钥
+      api_key: "your-openai-api-key"
+      # 请求超时时间（秒）
+      timeout: 30
+      # 每分钟速率限制
+      rate_limit: 60
+      # 最大并发请求数
+      max_concurrency: 10
+    # Anthropic 配置
+    anthropic:
+      # API 基础 URL
+      base_url: https://api.anthropic.com/v1
+      # API 密钥
+      api_key: "your-anthropic-api-key"
+      # 请求超时时间（秒）
+      timeout: 30
+      # 每分钟速率限制
+      rate_limit: 60
+      # 最大并发请求数
+      max_concurrency: 10
+    # Google AI 配置
+    google:
+      # API 基础 URL
+      base_url: https://generativelanguage.googleapis.com/v1
+      # API 密钥
+      api_key: "your-google-api-key"
+      # 请求超时时间（秒）
+      timeout: 30
+      # 每分钟速率限制
+      rate_limit: 60
+      # 最大并发请求数
+      max_concurrency: 10
+    # Cohere 配置
+    cohere:
+      # API 基础 URL
+      base_url: https://api.cohere.com/v1
+      # API 密钥
+      api_key: "your-cohere-api-key"
+      # 请求超时时间（秒）
+      timeout: 30
+      # 每分钟速率限制
+      rate_limit: 60
+      # 最大并发请求数
+      max_concurrency: 10
+
+# 缓存阈值配置
+cache_thresholds:
+  # 直接缓存命中的阈值（0-1，越高越严格）
+  direct_hit: 0.95
+  # 少量示例学习的阈值（0-1，越高越严格）
+  few_shot: 0.85
+
+# 路由权重配置
+router_weights:
+  # 历史评分权重
+  history: 0.35
+  # 价格权重
+  price: 0.25
+  # 配额权重
+  quota: 0.2
+  # 难度匹配权重
+  difficulty_match: 0.2
+
+# 成本优化配置
+cost_optimization:
+  # 成本因子权重（0-1）
+  cost_weight: 0.4
+  # 性能因子权重（0-1）
+  performance_weight: 0.3
+  # 能力匹配因子权重（0-1）
+  capability_weight: 0.2
+  # 可靠性因子权重（0-1）
+  reliability_weight: 0.1
+  # 价格和配额缓存的生存时间（秒）
+  cache_ttl: 300
+  # 价格和配额缓存的最大大小
+  max_cache_size: 10000
+  # 配额警告阈值（0-1）
+  quota_warning_threshold: 0.8
+  # 配额 critical 警报阈值（0-1）
+  quota_critical_threshold: 0.9
+
+# 嵌入维度配置
+# 语义缓存的文本嵌入维度
+embedding_dim: 12
+
+# 意图分类配置
+# 用于分类用户意图的关键词
+intent_keywords:
+  # 代码意图关键词
+  code:
+    - 代码
+    - python
+    - java
+    - algorithm
+    - bug
+    - 脚本
+  # 聊天意图关键词
+  chat:
+    - 天气
+    - 你好
+    - 闲聊
+    - 心情
+    - 笑话
+  # 推理意图关键词
+  reasoning:
+    - 证明
+    - 推理
+    - 分析
+    - 原因
+    - 为什么
+  # 创意意图关键词
+  creative:
+    - 写作
+    - 故事
+    - 创意
+    - 营销
+    - 文案
+
+# 模型目录配置
+# 可用模型及其配置列表
+model_catalog:
+  # LLM 模型
+  - model_id: gpt-4o
+    model_type: llm
+    price_per_1k_tokens: 5.0
+    remaining_tokens: 400000
+    quality_tier: large
+    api_format: openai
+    reasoning_support: true
+    enabled: true
+    rate_limit: 60
+    max_concurrency: 10
+    timeout: 30
+  
+  - model_id: claude-3.5-sonnet
+    model_type: llm
+    price_per_1k_tokens: 3.5
+    remaining_tokens: 300000
+    quality_tier: large
+    api_format: claude
+    reasoning_support: true
+    enabled: true
+    rate_limit: 60
+    max_concurrency: 10
+    timeout: 30
+  
+  - model_id: gpt-4o-mini
+    model_type: llm
+    price_per_1k_tokens: 0.8
+    remaining_tokens: 600000
+    quality_tier: medium
+    api_format: openai
+    reasoning_support: false
+    enabled: true
+    rate_limit: 120
+    max_concurrency: 20
+    timeout: 20
+  
+  - model_id: llama-3-8b
+    model_type: llm
+    price_per_1k_tokens: 0.2
+    remaining_tokens: 1000000
+    quality_tier: small
+    api_format: openai
+    reasoning_support: false
+    enabled: true
+    rate_limit: 240
+    max_concurrency: 30
+    timeout: 15
+
+  # 嵌入模型
+  - model_id: text-embedding-3-small
+    model_type: embedding
+    price_per_1k_tokens: 0.00015
+    remaining_tokens: 1000000
+    quality_tier: small
+    api_format: openai
+    enabled: true
+    rate_limit: 1000
+    max_concurrency: 50
+    timeout: 10
+    embedding_dimension: 1536
+  
+  - model_id: text-embedding-3-large
+    model_type: embedding
+    price_per_1k_tokens: 0.0006
+    remaining_tokens: 500000
+    quality_tier: large
+    api_format: openai
+    enabled: true
+    rate_limit: 500
+    max_concurrency: 25
+    timeout: 15
+    embedding_dimension: 3072
+
+  # 重排模型
+  - model_id: rerank-english-v3.0
+    model_type: reranker
+    price_per_1k_tokens: 0.0008
+    remaining_tokens: 500000
+    quality_tier: medium
+    api_format: cohere
+    enabled: true
+    rate_limit: 300
+    max_concurrency: 20
+    timeout: 10
+    max_input_length: 4096

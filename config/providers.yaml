@@ -1,0 +1,200 @@
+# Aperture 模型服务商配置文件
+# 支持第一方、云服务商网关、第三方和免费服务商的统一配置
+
+providers:
+  # 第一方服务商
+  first_party:
+    openai:
+      provider_id: "openai"
+      provider_name: "OpenAI"
+      base_url: "https://api.openai.com/v1"
+      api_key: "${OPENAI_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai", "vllm"]
+      pricing_tier: "standard"
+      rate_limits:
+        rpm: 60
+        tpm: 40000
+      features: ["function_calling", "streaming", "vision"]
+      enabled: true
+      priority: 1
+
+    anthropic:
+      provider_id: "anthropic"
+      provider_name: "Anthropic"
+      base_url: "https://api.anthropic.com/v1"
+      api_key: "${ANTHROPIC_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["anthropic"]
+      pricing_tier: "standard"
+      rate_limits:
+        rpm: 60
+        tpm: 50000
+      features: ["tool_use", "streaming", "long_context"]
+      enabled: true
+      priority: 2
+
+    google:
+      provider_id: "google"
+      provider_name: "Google Gemini"
+      base_url: "https://generativelanguage.googleapis.com/v1"
+      api_key: "${GOOGLE_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai"]
+      pricing_tier: "standard"
+      rate_limits:
+        rpm: 60
+        tpm: 30000
+      features: ["multimodal", "streaming"]
+      enabled: true
+      priority: 3
+
+    zhipu:
+      provider_id: "zhipu"
+      provider_name: "智谱AI"
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      api_key: "${ZHIPU_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai"]
+      pricing_tier: "standard"
+      rate_limits:
+        rpm: 100
+        tpm: 60000
+      features: ["function_calling", "streaming"]
+      enabled: true
+      priority: 4
+
+  # 云服务商网关
+  cloud_gateways:
+    azure:
+      provider_id: "azure"
+      provider_name: "Azure AI"
+      gateway_url: "https://{region}.api.cognitive.microsoft.com"
+      api_key: "${AZURE_API_KEY}"
+      auth_type: "api_key"
+      region: "eastus"
+      instance_type: "standard"
+      supported_models: ["gpt-4", "gpt-3.5-turbo"]
+      gateway_protocol: "openai"
+      enabled: true
+      priority: 5
+
+    aliyun:
+      provider_id: "aliyun"
+      provider_name: "阿里云通义千问"
+      gateway_url: "https://dashscope.aliyuncs.com/api/v1"
+      api_key: "${ALIYUN_API_KEY}"
+      auth_type: "api_key"
+      region: "cn-hangzhou"
+      instance_type: "standard"
+      supported_models: ["qwen-turbo", "qwen-plus", "qwen-max"]
+      gateway_protocol: "openai"
+      enabled: true
+      priority: 6
+
+  # 第三方服务商
+  third_party:
+    modelscope:
+      provider_id: "modelscope"
+      provider_name: "ModelScope"
+      base_url: "https://api-inference.modelscope.cn/v1"
+      auth_token: "${MODELSCOPE_TOKEN}"
+      auth_type: "token"
+      protocol_mapping:
+        "qwen": "openai"
+        "chatglm": "openai"
+      model_catalog_url: "https://modelscope.cn/models"
+      community_rating: 4.5
+      enabled: true
+      priority: 7
+
+    chatanywhere:
+      provider_id: "chatanywhere"
+      provider_name: "ChatAnywhere"
+      base_url: "https://api.chatanywhere.tech/v1"
+      api_key: "${CHATANYWHERE_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai"]
+      pricing_tier: "free"
+      free_limits:
+        daily_requests: 50
+        requests_per_minute: 30
+      rate_limits:
+        rpm: 30
+        tpm: 20000
+      features: ["streaming", "function_calling", "vision"]
+      enabled: true
+      priority: 8
+
+    open_router:
+      provider_id: "open_router"
+      provider_name: "OpenRouter"
+      base_url: "https://openrouter.ai/api/v1"
+      api_key: "${OPENROUTER_API_KEY}"
+      auth_type: "api_key"
+      protocol_mapping:
+        "*": "openai"
+      model_catalog_url: "https://openrouter.ai/models"
+      community_rating: 4.3
+      enabled: true
+      priority: 9
+
+  # 免费服务商（新增）
+  free_providers:
+    openrouter_free:
+      provider_id: "openrouter_free"
+      provider_name: "OpenRouter Free"
+      base_url: "https://openrouter.ai/api/v1"
+      api_key: "${OPENROUTER_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai"]
+      pricing_tier: "free"
+      free_limits:
+        daily_requests: 50
+        monthly_requests: 1000
+        requests_per_minute: 20
+      rate_limits:
+        rpm: 20
+        tpm: 15000
+      features: ["streaming", "image_understanding", "tool_calling"]
+      enabled: true
+      priority: 10
+      auto_route: true
+
+    google_ai_studio:
+      provider_id: "google_ai_studio"
+      provider_name: "Google AI Studio"
+      base_url: "https://generativelanguage.googleapis.com/v1"
+      api_key: "${GOOGLE_AI_STUDIO_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai"]
+      pricing_tier: "free"
+      free_limits:
+        daily_requests: 20
+        tokens_per_minute: 250000
+        requests_per_minute: 5
+      rate_limits:
+        rpm: 5
+        tpm: 250000
+      features: ["streaming", "multimodal"]
+      enabled: true
+      priority: 11
+      data_usage_notice: "数据可能用于训练（非UK/CH/EEA/EU地区）"
+
+    huggingface_inference:
+      provider_id: "huggingface_inference"
+      provider_name: "HuggingFace Inference"
+      base_url: "https://api-inference.huggingface.co"
+      auth_token: "${HF_INFERENCE_TOKEN}"
+      auth_type: "token"
+      supported_protocols: ["openai", "vllm"]
+      pricing_tier: "free"
+      free_limits:
+        daily_requests: 100
+        requests_per_minute: 10
+      rate_limits:
+        rpm: 10
+        tpm: 10000
+      features: ["streaming", "open_source_models"]
+      enabled: true
+      priority: 12

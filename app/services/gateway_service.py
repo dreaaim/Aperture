@@ -5,7 +5,8 @@ This module provides a gateway service that implements the complete processing f
 2. Cache decision making
 3. Few-shot learning injection
 4. Dynamic model routing
-5. Execution with fallback and feedback recording
+5. Dynamic provider selection
+6. Execution with fallback and feedback recording
 
 Example:
     from app.services.gateway_service import GatewayService
@@ -31,6 +32,8 @@ from app.services.routing_service import RoutingService
 from app.services.cache_service import CacheService
 from app.services.enhanced_intent_service import EnhancedIntentService
 from app.services.monitoring_service import MonitoringService
+from app.config.provider_config import ProviderManager
+from app.adapters.adapter_factory import UnifiedAdapterFactory
 from app.utils.telemetry import get_tracer
 
 # Get OpenTelemetry tracer
@@ -64,6 +67,8 @@ class GatewayService:
         self.cache_service = CacheService(model_service.repository)
         self.intent_service = EnhancedIntentService()
         self.monitoring_service = MonitoringService()
+        self.provider_manager = ProviderManager()
+        self.adapter_factory = UnifiedAdapterFactory()
     
     async def process_query(self, user_query: str) -> Dict[str, Any]:
         """Process a user query through the complete gateway flow.
@@ -131,11 +136,28 @@ class GatewayService:
                 span.set_attribute("few_shot_injection", True)
                 span.set_attribute("target_model", target_model.model_id)
             else:
-                # --- Phase 4: Dynamic routing ---\n
+                # --- Phase 4: Dynamic routing and provider selection ---
+                # Get required features based on intent and complexity
+                required_features = self._get_required_features(intent, complexity)
+                
+                # Get best provider
+                provider_requirements = {
+                    "model": None,
+                    "features": required_features,
+                    "max_cost": 0.1,  # 默认最大成本
+                    "min_quality": 0.8  # 默认最低质量
+                }
+                
+                best_provider = await self.routing_service.get_best_provider(provider_requirements)
+                
                 # Use routing service to select optimal model
                 target_model = self.routing_service.get_model_by_weight(intent, complexity=complexity)
                 span.set_attribute("dynamic_routing", True)
                 span.set_attribute("target_model", target_model.model_id)
+                
+                if best_provider:
+                    span.set_attribute("best_provider", best_provider["provider_id"])
+                    span.set_attribute("provider_selection", True)
             
             # --- Phase 5: Execution and feedback recording ---\n
             # Execute with fallback
@@ -187,3 +209,28 @@ class GatewayService:
         
         results = await asyncio.gather(*tasks)
         return results
+    
+    def _get_required_features(self, intent: str, complexity: float) -> List[str]:
+        """Get required features based on intent and complexity.
+        
+        Args:
+            intent: The intent category
+            complexity: The complexity score
+            
+        Returns:
+            List of required features
+        """
+        features = ["streaming"]  # 默认需要流式响应
+        
+        if intent == "code":
+            features.append("function_calling")
+            features.append("vision")  # 代码可能需要图像处理
+        elif intent == "reasoning":
+            features.append("long_context")
+        elif intent == "creative":
+            features.append("long_context")
+        
+        if complexity > 0.7:
+            features.append("long_context")
+        
+        return features

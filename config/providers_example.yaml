@@ -1,0 +1,132 @@
+# Aperture 模型服务商配置示例
+# 本文件展示如何在config中动态灵活配置新的providers
+
+providers:
+  # 第一方服务商
+  first_party:
+    openai:
+      provider_id: "openai"
+      provider_name: "OpenAI"
+      base_url: "https://api.openai.com/v1"
+      api_key: "${OPENAI_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai", "vllm"]
+      pricing_tier: "standard"
+      rate_limits:
+        rpm: 60
+        tpm: 40000
+      features: ["function_calling", "streaming", "vision"]
+      enabled: true
+      priority: 1
+
+    anthropic:
+      provider_id: "anthropic"
+      provider_name: "Anthropic"
+      base_url: "https://api.anthropic.com/v1"
+      api_key: "${ANTHROPIC_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["anthropic"]
+      pricing_tier: "standard"
+      rate_limits:
+        rpm: 60
+        tpm: 50000
+      features: ["tool_use", "streaming", "long_context"]
+      enabled: true
+      priority: 2
+
+  # 第三方服务商
+  third_party:
+    chatanywhere:
+      provider_id: "chatanywhere"
+      provider_name: "ChatAnywhere"
+      base_url: "https://api.chatanywhere.tech/v1"
+      api_key: "${CHATANYWHERE_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai"]
+      pricing_tier: "free"
+      free_limits:
+        daily_requests: 50
+        requests_per_minute: 30
+      rate_limits:
+        rpm: 30
+        tpm: 20000
+      features: ["streaming", "function_calling", "vision"]
+      enabled: true
+      priority: 8
+
+    modelscope:
+      provider_id: "modelscope"
+      provider_name: "ModelScope"
+      base_url: "https://api-inference.modelscope.cn/v1"
+      auth_token: "${MODELSCOPE_TOKEN}"
+      auth_type: "token"
+      protocol_mapping:
+        "qwen": "openai"
+        "chatglm": "openai"
+      model_catalog_url: "https://modelscope.cn/models"
+      community_rating: 4.5
+      enabled: true
+      priority: 7
+
+  # 免费服务商
+  free_providers:
+    openrouter_free:
+      provider_id: "openrouter_free"
+      provider_name: "OpenRouter Free"
+      base_url: "https://openrouter.ai/api/v1"
+      api_key: "${OPENROUTER_API_KEY}"
+      auth_type: "api_key"
+      supported_protocols: ["openai"]
+      pricing_tier: "free"
+      free_limits:
+        daily_requests: 50
+        monthly_requests: 1000
+        requests_per_minute: 20
+      rate_limits:
+        rpm: 20
+        tpm: 15000
+      features: ["streaming", "image_understanding", "tool_calling"]
+      enabled: true
+      priority: 10
+      auto_route: true
+
+# 新增服务商示例
+# 要添加新的服务商，只需在相应的分类下添加配置即可
+# 例如，添加一个新的第三方服务商：
+#
+#  third_party:
+#    new_provider:
+#      provider_id: "new_provider"
+#      provider_name: "New Provider"
+#      base_url: "https://api.newprovider.com/v1"
+#      api_key: "${NEW_PROVIDER_API_KEY}"
+#      auth_type: "api_key"
+#      supported_protocols: ["openai"]
+#      pricing_tier: "standard"
+#      rate_limits:
+#        rpm: 100
+#        tpm: 50000
+#      features: ["streaming", "function_calling"]
+#      enabled: true
+#      priority: 15
+
+# 配置说明：
+# 1. provider_id: 服务商唯一标识，必须唯一
+# 2. provider_name: 服务商名称，用于显示
+# 3. base_url: 服务商API基础URL
+# 4. api_key/auth_token: 认证信息，支持环境变量替换
+# 5. auth_type: 认证类型，支持api_key、token、oauth等
+# 6. supported_protocols: 支持的协议类型
+# 7. pricing_tier: 价格层级，支持standard、free等
+# 8. rate_limits: 速率限制
+# 9. features: 支持的特性
+# 10. enabled: 是否启用
+# 11. priority: 优先级，数字越小优先级越高
+
+# 环境变量配置示例：
+# 在项目根目录创建 .env 文件，添加以下内容：
+# OPENAI_API_KEY=your_openai_api_key
+# ANTHROPIC_API_KEY=your_anthropic_api_key
+# CHATANYWHERE_API_KEY=your_chatanywhere_api_key
+# MODELSCOPE_TOKEN=your_modelscope_token
+# OPENROUTER_API_KEY=your_openrouter_api_key

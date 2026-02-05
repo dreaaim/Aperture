@@ -31,8 +31,10 @@ Example:
     print(settings.model_catalog[0].model_id)  # Output: "gpt-4o"
 """
 
+import yaml
+import os
 from pydantic_settings import BaseSettings
-from typing import Dict, List
+from typing import Dict, List, Any, Optional
 
 
 class RouterWeights(BaseSettings):
@@ -176,6 +178,94 @@ class CostOptimizationSettings(BaseSettings):
     quota_critical_threshold: float = 0.9
 
 
+class DatabaseSettings(BaseSettings):
+    """Database connection configuration settings.
+    
+    This class defines configuration options for database connections:
+    - driver: Database driver (postgresql, mysql, sqlite, etc.)
+    - host: Database host address
+    - port: Database port
+    - database: Database name
+    - username: Database username
+    - password: Database password
+    - pool_size: Connection pool size
+    - pool_timeout: Connection pool timeout in seconds
+    - pool_recycle: Connection pool recycle time in seconds
+    - echo: Whether to echo SQL statements
+    """
+
+    # Database driver
+    driver: str = "postgresql"
+    
+    # Database host address
+    host: str = "localhost"
+    
+    # Database port
+    port: int = 5432
+    
+    # Database name
+    database: str = "aperture"
+    
+    # Database username
+    username: str = "postgres"
+    
+    # Database password
+    password: str = "postgres"
+    
+    # Connection pool size
+    pool_size: int = 10
+    
+    # Connection pool timeout in seconds
+    pool_timeout: int = 30
+    
+    # Connection pool recycle time in seconds
+    pool_recycle: int = 3600
+    
+    # Whether to echo SQL statements
+    echo: bool = False
+
+
+class ModelProviderSettings(BaseSettings):
+    """Model provider configuration settings.
+    
+    This class defines configuration options for model providers:
+    - providers: Dictionary of model provider configurations
+      - For each provider: base_url, api_key, timeout, rate_limit, etc.
+    """
+
+    # Dictionary of model provider configurations
+    providers: Dict[str, Dict[str, Any]] = {
+        "openai": {
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "",
+            "timeout": 30,
+            "rate_limit": 60,
+            "max_concurrency": 10
+        },
+        "anthropic": {
+            "base_url": "https://api.anthropic.com/v1",
+            "api_key": "",
+            "timeout": 30,
+            "rate_limit": 60,
+            "max_concurrency": 10
+        },
+        "google": {
+            "base_url": "https://generativelanguage.googleapis.com/v1",
+            "api_key": "",
+            "timeout": 30,
+            "rate_limit": 60,
+            "max_concurrency": 10
+        },
+        "cohere": {
+            "base_url": "https://api.cohere.com/v1",
+            "api_key": "",
+            "timeout": 30,
+            "rate_limit": 60,
+            "max_concurrency": 10
+        }
+    }
+
+
 class Settings(BaseSettings):
     """Runtime settings shared across the router and cache.
     
@@ -191,6 +281,12 @@ class Settings(BaseSettings):
     
     # Cost optimization settings
     cost_optimization: CostOptimizationSettings = CostOptimizationSettings()
+    
+    # Database settings
+    database: DatabaseSettings = DatabaseSettings()
+    
+    # Model provider settings
+    model_providers: ModelProviderSettings = ModelProviderSettings()
     
     # Embedding settings
     # Dimension of text embeddings for semantic caching
@@ -304,9 +400,9 @@ class Settings(BaseSettings):
         ),
     ]
     
-    # Database configuration
-    # PostgreSQL connection string
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/aperture"
+    # Database configuration (backward compatibility)
+    # PostgreSQL connection string - overrides database settings if provided
+    database_url: Optional[str] = None
     
     class Config:
         """Pydantic settings configuration.
@@ -321,6 +417,65 @@ class Settings(BaseSettings):
         # Delimiter for nested environment variables
         # Example: CACHE_THRESHOLDS__DIRECT_HIT=0.9
         env_nested_delimiter = "__"
+
+    def __init__(self, **kwargs):
+        """Initialize settings with YAML file support.
+        
+        Loads configuration from YAML file if it exists, then overrides with
+        environment variables and explicit kwargs.
+        """
+        # Load from YAML file if it exists
+        yaml_config = {}
+        config_files = ["config.yaml", "config.yml"]
+        
+        for config_file in config_files:
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    yaml_config = yaml.safe_load(f)
+                break
+        
+        # Merge YAML config with kwargs (kwargs takes precedence)
+        merged_config = {**yaml_config, **kwargs}
+        
+        # Process nested configs
+        if 'database' in merged_config and isinstance(merged_config['database'], dict):
+            merged_config['database'] = DatabaseSettings(**merged_config['database'])
+        
+        if 'model_providers' in merged_config and isinstance(merged_config['model_providers'], dict):
+            if 'providers' in merged_config['model_providers']:
+                merged_config['model_providers'] = ModelProviderSettings(**merged_config['model_providers'])
+        
+        if 'cache_thresholds' in merged_config and isinstance(merged_config['cache_thresholds'], dict):
+            merged_config['cache_thresholds'] = CacheThresholds(**merged_config['cache_thresholds'])
+        
+        if 'router_weights' in merged_config and isinstance(merged_config['router_weights'], dict):
+            merged_config['router_weights'] = RouterWeights(**merged_config['router_weights'])
+        
+        if 'cost_optimization' in merged_config and isinstance(merged_config['cost_optimization'], dict):
+            merged_config['cost_optimization'] = CostOptimizationSettings(**merged_config['cost_optimization'])
+        
+        # Handle model catalog
+        if 'model_catalog' in merged_config and isinstance(merged_config['model_catalog'], list):
+            merged_config['model_catalog'] = [
+                ModelConfig(**model) for model in merged_config['model_catalog']
+            ]
+        
+        super().__init__(**merged_config)
+
+    @property
+    def effective_database_url(self) -> str:
+        """Get effective database URL.
+        
+        Returns database_url if provided, otherwise constructs it from database settings.
+        """
+        if self.database_url:
+            return self.database_url
+        
+        # Construct database URL from settings
+        if self.database.driver == "sqlite":
+            return f"{self.database.driver}:///{self.database.database}"
+        else:
+            return f"{self.database.driver}://{self.database.username}:{self.database.password}@{self.database.host}:{self.database.port}/{self.database.database}"
 
 
 # Create a global settings instance

@@ -1,93 +1,104 @@
-"""Model adapter factory.
+"""适配器工厂模块
 
-This module provides a factory class for creating and managing model adapters,
-making it easy to get the appropriate adapter for a given model.
-
-Example:
-    from app.services.model_adapters.adapter_factory import AdapterFactory
-    from app.models import ModelStatus
-    
-    model = ModelStatus(
-        model_id="gpt-4o",
-        price_per_1k_tokens=5.0,
-        remaining_tokens=400000,
-        quality_tier="large",
-        api_format="openai"
-    )
-    
-    factory = AdapterFactory()
-    adapter = factory.get_adapter(model)
-    
-    # Use the adapter
-    request = adapter.format_request("Hello, how are you?")
+该模块实现了统一的适配器工厂，根据服务商配置和协议类型创建对应的适配器实例
 """
 
 from typing import Dict, Optional
-from app.models import ModelStatus
-from app.adapters.providers.openai_adapter import OpenAIAdapter
-from app.adapters.providers.claude_adapter import ClaudeAdapter
-from app.adapters.providers.gemini_adapter import GeminiAdapter
-from app.adapters.base.provider_base import ModelAdapter
+from app.adapters.base.unified_adapter import UnifiedModelAdapter
+from app.adapters.base.protocol_types import ProtocolType
+from app.adapters.protocols.openai_adapter import OpenAIProtocolAdapter
+from app.adapters.protocols.anthropic_adapter import AnthropicProtocolAdapter
+from app.adapters.protocols.modelscope_adapter import ModelScopeProtocolAdapter
 
 
-class AdapterFactory:
-    """Factory for creating model adapters."""
+class UnifiedAdapterFactory:
+    """统一适配器工厂"""
     
     def __init__(self):
-        """Initialize the adapter factory."""
-        self._adapters: Dict[str, ModelAdapter] = {}
+        """初始化适配器工厂"""
+        self._adapters: Dict[str, UnifiedModelAdapter] = {}
     
-    def get_adapter(self, model: ModelStatus) -> ModelAdapter:
-        """Get an adapter for the given model.
+    def create_adapter(self, provider_config: Dict) -> Optional[UnifiedModelAdapter]:
+        """创建协议适配器
         
         Args:
-            model: The model to get an adapter for
+            provider_config: 服务商配置
             
         Returns:
-            An adapter for the model
+            适配器实例，如果不支持则返回None
         """
-        # Create a cache key based on model ID and API format
-        cache_key = f"{model.model_id}:{model.api_format}"
+        provider_id = provider_config['provider_id']
         
-        # Return cached adapter if it exists
-        if cache_key in self._adapters:
-            return self._adapters[cache_key]
+        # 检查缓存
+        if provider_id in self._adapters:
+            return self._adapters[provider_id]
         
-        # Create a new adapter based on API format
-        adapter = self._create_adapter(model)
+        # 确定协议类型
+        protocol = self._determine_protocol(provider_config)
         
-        # Cache the adapter
-        self._adapters[cache_key] = adapter
+        # 创建适配器
+        adapter = self._create_adapter_by_protocol(provider_config, protocol)
+        
+        if adapter:
+            self._adapters[provider_id] = adapter
         
         return adapter
     
-    def _create_adapter(self, model: ModelStatus) -> ModelAdapter:
-        """Create an adapter for the given model.
+    def _determine_protocol(self, provider_config: Dict) -> ProtocolType:
+        """确定协议类型
         
         Args:
-            model: The model to create an adapter for
+            provider_config: 服务商配置
             
         Returns:
-            An adapter for the model
+            协议类型
         """
-        if model.api_format == "openai":
-            return OpenAIAdapter(model)
-        elif model.api_format == "claude":
-            return ClaudeAdapter(model)
-        elif model.api_format == "gemini":
-            return GeminiAdapter(model)
-        else:
-            # Default to OpenAI adapter for unknown formats
-            return OpenAIAdapter(model)
+        supported_protocols = provider_config.get('supported_protocols', [])
+        
+        # 优先级：OpenAI > Anthropic > vLLM
+        for protocol in [ProtocolType.OPENAI, ProtocolType.ANTHROPIC, ProtocolType.VLLM]:
+            if protocol.value in supported_protocols:
+                return protocol
+        
+        # 检查网关协议
+        gateway_protocol = provider_config.get('gateway_protocol')
+        if gateway_protocol:
+            return ProtocolType(gateway_protocol)
+        
+        # 检查协议映射
+        protocol_mapping = provider_config.get('protocol_mapping')
+        if protocol_mapping:
+            # 使用第一个映射的协议
+            first_protocol = next(iter(protocol_mapping.values()), 'openai')
+            return ProtocolType(first_protocol)
+        
+        # 默认使用OpenAI协议
+        return ProtocolType.OPENAI
+    
+    def _create_adapter_by_protocol(self, provider_config: Dict, protocol: ProtocolType) -> Optional[UnifiedModelAdapter]:
+        """根据协议创建适配器
+        
+        Args:
+            provider_config: 服务商配置
+            protocol: 协议类型
+            
+        Returns:
+            适配器实例
+        """
+        provider_id = provider_config.get('provider_id')
+        
+        # 特殊处理ModelScope
+        if provider_id == 'modelscope':
+            return ModelScopeProtocolAdapter(provider_config)
+        
+        if protocol == ProtocolType.OPENAI:
+            return OpenAIProtocolAdapter(provider_config)
+        elif protocol == ProtocolType.ANTHROPIC:
+            return AnthropicProtocolAdapter(provider_config)
+        # 可以添加其他协议适配器
+        
+        return None
     
     def clear_cache(self):
-        """Clear the adapter cache."""
+        """清空适配器缓存"""
         self._adapters.clear()
-    
-    def get_cache_size(self) -> int:
-        """Get the size of the adapter cache.
-        
-        Returns:
-            The size of the adapter cache
-        """
-        return len(self._adapters)

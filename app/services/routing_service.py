@@ -8,6 +8,7 @@ The RoutingService class handles:
 - Model health checks
 - Load balancing
 - Priority-based routing
+- Dynamic provider selection
 
 Example:
     from app.services.routing_service import RoutingService
@@ -33,6 +34,8 @@ from app.services.cost_optimization_service import CostOptimizationService
 from app.models import ModelStatus
 from app.utils.telemetry import get_tracer
 from app.config import settings
+from app.config.provider_config import ProviderManager
+from app.adapters.adapter_factory import UnifiedAdapterFactory
 
 # Get OpenTelemetry tracer
 tracer = get_tracer()
@@ -51,8 +54,11 @@ class RoutingService:
         self.model_service = model_service
         self.intent_service = EnhancedIntentService()
         self.cost_optimization_service = cost_optimization_service
+        self.provider_manager = ProviderManager()
+        self.adapter_factory = UnifiedAdapterFactory()
         self.active_requests: Dict[str, int] = {}  # 活跃请求计数
         self.model_health: Dict[str, bool] = {}  # 模型健康状态
+        self.provider_health: Dict[str, bool] = {}  # 服务商健康状态
     
     def get_intent_complexity(self, query: str) -> float:
         """Calculate intent complexity score based on query.
@@ -502,3 +508,124 @@ class RoutingService:
             span.set_attribute("model_count", len(available_models))
             
             return top_models
+    
+    async def get_best_provider(self, requirements: Dict[str, Any]) -> Optional[Dict]:
+        """Get the best provider based on requirements.
+        
+        Args:
+            requirements: Provider requirements
+                - model: Required model
+                - features: Required features
+                - max_cost: Maximum cost
+                - min_quality: Minimum quality
+        
+        Returns:
+            Best provider configuration or None
+        """
+        with tracer.start_as_current_span("get_best_provider", attributes={
+            "model": requirements.get("model"),
+            "features": requirements.get("features", []),
+            "max_cost": requirements.get("max_cost"),
+            "min_quality": requirements.get("min_quality")
+        }) as span:
+            # Get enabled providers
+            providers = self.provider_manager.get_enabled_providers()
+            
+            if not providers:
+                span.set_attribute("no_providers", True)
+                return None
+            
+            # Filter providers based on requirements
+            filtered_providers = []
+            for provider in providers:
+                if self._check_provider_requirements(provider, requirements):
+                    filtered_providers.append(provider)
+            
+            if not filtered_providers:
+                span.set_attribute("no_matching_providers", True)
+                return None
+            
+            # Calculate provider scores
+            scored_providers = []
+            for provider in filtered_providers:
+                score = self._calculate_provider_score(provider, requirements)
+                scored_providers.append((provider, score))
+            
+            # Sort by score
+            scored_providers.sort(key=lambda x: x[1], reverse=True)
+            
+            # Get best provider
+            best_provider = scored_providers[0][0]
+            
+            # Set span attributes
+            span.set_attribute("best_provider_id", best_provider["provider_id"])
+            span.set_attribute("best_provider_score", scored_providers[0][1])
+            span.set_attribute("provider_count", len(filtered_providers))
+            
+            return best_provider
+    
+    def _check_provider_requirements(self, provider: Dict, requirements: Dict) -> bool:
+        """Check if provider meets requirements.
+        
+        Args:
+            provider: Provider configuration
+            requirements: Provider requirements
+        
+        Returns:
+            True if provider meets requirements
+        """
+        # Check health status
+        if not self.provider_health.get(provider["provider_id"], True):
+            return False
+        
+        # Check features
+        required_features = requirements.get("features", [])
+        provider_features = provider.get("features", [])
+        if not all(feature in provider_features for feature in required_features):
+            return False
+        
+        # Check model support if specified
+        required_model = requirements.get("model")
+        if required_model:
+            supported_models = provider.get("supported_models", [])
+            if supported_models and required_model not in supported_models:
+                return False
+        
+        return True
+    
+    def _calculate_provider_score(self, provider: Dict, requirements: Dict) -> float:
+        """Calculate provider score based on requirements.
+        
+        Args:
+            provider: Provider configuration
+            requirements: Provider requirements
+        
+        Returns:
+            Provider score
+        """
+        score = 0.0
+        
+        # Priority score (higher priority = better)
+        priority = provider.get("priority", 999)
+        priority_score = 1.0 / (1 + priority)
+        score += priority_score * 0.3
+        
+        # Features score
+        required_features = requirements.get("features", [])
+        provider_features = provider.get("features", [])
+        feature_match = len(set(required_features) & set(provider_features)) / len(required_features) if required_features else 1.0
+        score += feature_match * 0.4
+        
+        # Pricing score (free is better)
+        pricing_tier = provider.get("pricing_tier", "standard")
+        if pricing_tier == "free":
+            score += 0.3
+        
+        # Rate limit score (higher limits = better)
+        rate_limits = provider.get("rate_limits", {})
+        rpm = rate_limits.get("rpm", 60)
+        tpm = rate_limits.get("tpm", 40000)
+        rate_limit_score = (rpm / 100) * 0.1 + (tpm / 100000) * 0.1
+        score += min(rate_limit_score, 0.2)
+        
+        return score
