@@ -104,7 +104,7 @@ async def fake_stream_generator(text: str, chunk_size: int = 5) -> AsyncGenerato
 
 
 @router.post("/v1/query")
-def route_query(request: Request, payload: QueryRequest):
+async def route_query(request: Request, payload: QueryRequest):
     """Route a query through cache, few-shot fallback, or full routing.
     
     Args:
@@ -197,7 +197,7 @@ def route_query(request: Request, payload: QueryRequest):
                 # The embedding is used to find similar queries in the cache
                 query_embedding = cache_service.embed_text(payload.query)
                 # Find the most similar cached entry and its similarity score
-                cached_entry, similarity = cache_service.find_similar(query_embedding)
+                cached_entry, similarity = await cache_service.find_similar(payload.query, query_embedding)
                 embed_span.set_attribute("similarity_score", similarity)
                 embed_span.set_attribute("cache_entry_found", cached_entry is not None)
 

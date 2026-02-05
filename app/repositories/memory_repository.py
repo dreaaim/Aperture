@@ -270,3 +270,16 @@ class MemoryRepository:
             request_id = str(uuid.uuid4())
             span.set_attribute("request_id", request_id)
             return request_id
+    
+    def initialize_models(self) -> None:
+        """Initialize default models.
+        
+        This method is called during container initialization to initialize
+        default models in the repository.
+        """
+        # Create span for model initialization
+        with tracer.start_as_current_span("initialize_models") as span:
+            # No-op for memory repository
+            # In a PostgreSQL repository, this would create tables and seed default models
+            span.set_attribute("models_initialized", True)
+            span.set_attribute("repository_type", "MemoryRepository")

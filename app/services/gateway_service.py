@@ -82,7 +82,7 @@ class GatewayService:
             # --- Phase 1: Semantic retrieval and intent recognition ---
             # Search for similar queries in cache
             query_embedding = self.cache_service.embed_text(user_query)
-            cached_entry, similarity = self.cache_service.find_similar(query_embedding)
+            cached_entry, similarity = await self.cache_service.find_similar(user_query, query_embedding)
             history_answer = cached_entry.answer if cached_entry else ''
             
             # Get intent and complexity

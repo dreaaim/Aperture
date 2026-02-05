@@ -40,6 +40,18 @@ from app.models import CacheEntry
 from app.repositories.memory_repository import MemoryRepository
 from app.utils.math import cosine_similarity
 from app.utils.telemetry import get_tracer
+from sentence_transformers import CrossEncoder
+import asyncio
+
+# Initialize reranker model (lazy loading)
+ranking_model = None
+
+async def get_ranking_model():
+    """Lazily initialize and return the reranking model."""
+    global ranking_model
+    if ranking_model is None:
+        ranking_model = CrossEncoder('BAAI/bge-reranker-base')
+    return ranking_model
 
 # Get OpenTelemetry tracer
 tracer = get_tracer()
@@ -113,10 +125,11 @@ class CacheService:
             
             return embeddings
 
-    def find_similar(self, query_embedding: List[float], top_k: int = 5) -> Tuple[Optional[CacheEntry], float]:
+    async def find_similar(self, query: str, query_embedding: List[float], top_k: int = 5) -> Tuple[Optional[CacheEntry], float]:
         """Find similar cache entries with Top-K retrieval and reranking.
         
         Args:
+            query: The original query text (used for reranking)
             query_embedding: The embedding vector of the query to find similar entries for
             top_k: Number of top similar entries to retrieve
             
@@ -133,7 +146,7 @@ class CacheService:
             >>> 
             >>> similar_query = "帮我写个Python程序"
             >>> similar_embedding = service.embed_text(similar_query)
-            >>> cached_entry, similarity = service.find_similar(similar_embedding)
+            >>> cached_entry, similarity = await service.find_similar(similar_query, similar_embedding)
             >>> cached_entry.query
             "帮我写个Python脚本"
             >>> cached_entry.answer
@@ -163,21 +176,54 @@ class CacheService:
                 span.set_attribute("similar_entry_found", False)
                 return None, 0.0
             
-            # Step 2: Fallback to cosine similarity without reranking
-            # Use the top entry from cosine similarity
-            best_entry = top_entries[0][0]
-            best_score = top_entries[0][1]
-            
-            # Set span attributes
-            span.set_attribute("best_similarity_score", best_score)
-            span.set_attribute("similar_entry_found", True)
-            span.set_attribute("reranking_applied", False)
-            span.set_attribute("top_k_retrieved", len(top_entries))
-            if best_entry:
-                span.set_attribute("best_entry_model_id", best_entry.model_id)
-                span.set_attribute("best_entry_query", best_entry.query[:50])  # Truncate for span attributes
-            
-            return best_entry, best_score
+            # Step 2: Apply reranking using Cross-Encoder
+            try:
+                # Get reranking model
+                model = await get_ranking_model()
+                
+                # Prepare pairs for reranking
+                pairs = [(query, entry[0].query) for entry in top_entries]
+                
+                # Get reranking scores
+                rerank_scores = model.predict(pairs)
+                
+                # Combine entries with rerank scores
+                reranked_entries = [(top_entries[i][0], float(rerank_scores[i])) for i in range(len(top_entries))]
+                
+                # Sort by rerank score (descending)
+                reranked_entries.sort(key=lambda item: item[1], reverse=True)
+                
+                # Get best entry and score after reranking
+                best_entry = reranked_entries[0][0]
+                best_score = reranked_entries[0][1]
+                
+                # Set span attributes
+                span.set_attribute("best_similarity_score", best_score)
+                span.set_attribute("similar_entry_found", True)
+                span.set_attribute("reranking_applied", True)
+                span.set_attribute("top_k_retrieved", len(top_entries))
+                span.set_attribute("reranking_model", "BAAI/bge-reranker-base")
+                if best_entry:
+                    span.set_attribute("best_entry_model_id", best_entry.model_id)
+                    span.set_attribute("best_entry_query", best_entry.query[:50])  # Truncate for span attributes
+                
+                return best_entry, best_score
+            except Exception as e:
+                # Fallback to cosine similarity if reranking fails
+                span.set_attribute("reranking_error", str(e)[:100])
+                best_entry = top_entries[0][0]
+                best_score = top_entries[0][1]
+                
+                # Set span attributes
+                span.set_attribute("best_similarity_score", best_score)
+                span.set_attribute("similar_entry_found", True)
+                span.set_attribute("reranking_applied", False)
+                span.set_attribute("top_k_retrieved", len(top_entries))
+                if best_entry:
+                    span.set_attribute("best_entry_model_id", best_entry.model_id)
+                    span.set_attribute("best_entry_query", best_entry.query[:50])  # Truncate for span attributes
+                
+                return best_entry, best_score
 
     def upsert_cache(self, query: str, query_embedding: List[float], answer: str, model_id: str) -> None:
         """Add a new entry to the cache.
