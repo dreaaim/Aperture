@@ -233,7 +233,8 @@ class ModelService(BaseModelService):
             span.set_attribute("difficulty", difficulty)
             
             # Step 2: Filter models based on reasoning level support
-            filtered_models = [model for model in self.model_catalog if model.enabled]
+            # Only consider LLM models for text generation tasks
+            filtered_models = [model for model in self.model_catalog if model.enabled and model.model_type == "llm"]
             if reasoning_level and reasoning_level != "medium":
                 filtered_models = [model for model in filtered_models if model.reasoning_support]
             
@@ -244,8 +245,25 @@ class ModelService(BaseModelService):
             scored_models.sort(key=lambda item: item[1], reverse=True)
             
             # Step 5: Return the highest scoring model
-            selected_model = scored_models[0][0]
-            highest_score = scored_models[0][1]
+            if scored_models:
+                selected_model = scored_models[0][0]
+                highest_score = scored_models[0][1]
+            else:
+                # Fallback to first enabled LLM model
+                fallback_models = [model for model in self.model_catalog if model.enabled and model.model_type == "llm"]
+                if fallback_models:
+                    selected_model = fallback_models[0]
+                    highest_score = 0.0
+                else:
+                    # Fallback to any enabled model
+                    fallback_models = [model for model in self.model_catalog if model.enabled]
+                    if fallback_models:
+                        selected_model = fallback_models[0]
+                        highest_score = 0.0
+                    else:
+                        # No models available
+                        span.set_attribute("error", "No models available")
+                        raise ValueError("No models available")
             
             # Set reasoning level if provided
             if reasoning_level:

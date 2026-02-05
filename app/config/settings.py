@@ -137,6 +137,45 @@ class ModelConfig(BaseSettings):
     max_input_length: int = 4096
 
 
+class CostOptimizationSettings(BaseSettings):
+    """Cost optimization configuration settings.
+    
+    This class defines configuration options for cost optimization:
+    - cost_weight: Weight for cost factor in model scoring
+    - performance_weight: Weight for performance factor in model scoring
+    - capability_weight: Weight for capability matching factor in model scoring
+    - quota_weight: Weight for quota health factor in model scoring
+    - cache_ttl: Time to live for price and quota cache in seconds
+    - max_cache_size: Maximum size of price and quota cache
+    - quota_warning_threshold: Threshold for quota warning (0-1)
+    - quota_critical_threshold: Threshold for quota critical alert (0-1)
+    """
+
+    # Weight for cost factor in model scoring (0-1)
+    cost_weight: float = 0.4
+    
+    # Weight for performance factor in model scoring (0-1)
+    performance_weight: float = 0.3
+    
+    # Weight for capability matching factor in model scoring (0-1)
+    capability_weight: float = 0.2
+    
+    # Weight for reliability factor in model scoring (0-1)
+    reliability_weight: float = 0.1
+    
+    # Time to live for price and quota cache in seconds
+    cache_ttl: int = 300
+    
+    # Maximum size of price and quota cache
+    max_cache_size: int = 10000
+    
+    # Threshold for quota warning (0-1)
+    quota_warning_threshold: float = 0.8
+    
+    # Threshold for quota critical alert (0-1)
+    quota_critical_threshold: float = 0.9
+
+
 class Settings(BaseSettings):
     """Runtime settings shared across the router and cache.
     
@@ -149,6 +188,9 @@ class Settings(BaseSettings):
     
     # Router settings
     router_weights: RouterWeights = RouterWeights()
+    
+    # Cost optimization settings
+    cost_optimization: CostOptimizationSettings = CostOptimizationSettings()
     
     # Embedding settings
     # Dimension of text embeddings for semantic caching

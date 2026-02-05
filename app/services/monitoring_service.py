@@ -64,6 +64,19 @@ class ChannelPerformanceRecord:
     error_message: Optional[str] = None
 
 
+@dataclass
+class CostRecord:
+    """Cost record."""
+    model_id: str
+    user_id: Optional[str]
+    tokens_used: int
+    cost_incurred: float
+    timestamp: float
+    request_id: str
+    intent: str
+    complexity: float
+
+
 class MonitoringService:
     """Monitoring service for model usage and performance."""
     
@@ -71,6 +84,7 @@ class MonitoringService:
         """Initialize the monitoring service."""
         self.model_usage_records: List[ModelUsageRecord] = []
         self.channel_performance_records: List[ChannelPerformanceRecord] = []
+        self.cost_records: List[CostRecord] = []
         self.error_records: List[Dict[str, Any]] = []
         self.max_records = 10000  # Maximum number of records to keep
         self.statistics_interval = 60  # Statistics aggregation interval in seconds
@@ -408,8 +422,216 @@ class MonitoringService:
         """
         return self.error_records[-limit:]
     
+    def record_cost(self, model_id: str, user_id: Optional[str] = None, tokens_used: int = 0, cost_incurred: float = 0.0, request_id: str = "", intent: str = "", complexity: float = 0.0):
+        """Record cost information.
+        
+        Args:
+            model_id: The model ID
+            user_id: Optional user ID
+            tokens_used: Tokens used
+            cost_incurred: Cost incurred
+            request_id: Request ID
+            intent: Intent of the request
+            complexity: Complexity score
+        """
+        with tracer.start_as_current_span("record_cost", attributes={
+            "model_id": model_id,
+            "user_id": user_id or "anonymous",
+            "cost_incurred": cost_incurred
+        }) as span:
+            record = CostRecord(
+                model_id=model_id,
+                user_id=user_id,
+                tokens_used=tokens_used,
+                cost_incurred=cost_incurred,
+                timestamp=time.time(),
+                request_id=request_id,
+                intent=intent,
+                complexity=complexity
+            )
+            
+            self.cost_records.append(record)
+            
+            # Keep only the most recent records
+            if len(self.cost_records) > self.max_records:
+                self.cost_records = self.cost_records[-self.max_records:]
+            
+            span.set_attribute("recorded", True)
+            span.set_attribute("cost_incurred", cost_incurred)
+            span.set_attribute("tokens_used", tokens_used)
+    
+    def get_cost_stats(self, time_window: int = 3600) -> Dict[str, Any]:
+        """Get cost statistics.
+        
+        Args:
+            time_window: Time window in seconds
+            
+        Returns:
+            Cost statistics
+        """
+        with tracer.start_as_current_span("get_cost_stats", attributes={
+            "time_window": time_window
+        }) as span:
+            cutoff_time = time.time() - time_window
+            
+            # Filter records for this time window
+            recent_records = [
+                r for r in self.cost_records
+                if r.timestamp >= cutoff_time
+            ]
+            
+            if not recent_records:
+                span.set_attribute("no_records", True)
+                return {
+                    "total_cost": 0.0,
+                    "total_tokens": 0,
+                    "average_cost_per_request": 0.0,
+                    "requests_with_cost": 0,
+                    "models_used": [],
+                    "top_cost_models": []
+                }
+            
+            # Calculate statistics
+            total_cost = sum(r.cost_incurred for r in recent_records)
+            total_tokens = sum(r.tokens_used for r in recent_records)
+            requests_with_cost = len(recent_records)
+            
+            # Calculate model costs
+            model_costs = {}
+            for record in recent_records:
+                if record.model_id not in model_costs:
+                    model_costs[record.model_id] = 0.0
+                model_costs[record.model_id] += record.cost_incurred
+            
+            # Get top cost models
+            top_cost_models = sorted(model_costs.items(), key=lambda x: x[1], reverse=True)[:5]
+            
+            stats = {
+                "total_cost": total_cost,
+                "total_tokens": total_tokens,
+                "average_cost_per_request": total_cost / requests_with_cost if requests_with_cost > 0 else 0.0,
+                "requests_with_cost": requests_with_cost,
+                "models_used": list(model_costs.keys()),
+                "top_cost_models": top_cost_models
+            }
+            
+            span.set_attribute("total_cost", total_cost)
+            span.set_attribute("requests_with_cost", requests_with_cost)
+            span.set_attribute("models_used_count", len(stats["models_used"]))
+            
+            return stats
+    
+    def get_model_cost(self, model_id: str, time_window: int = 3600) -> Dict[str, Any]:
+        """Get cost statistics for a model.
+        
+        Args:
+            model_id: The model ID
+            time_window: Time window in seconds
+            
+        Returns:
+            Cost statistics for the model
+        """
+        with tracer.start_as_current_span("get_model_cost", attributes={
+            "model_id": model_id,
+            "time_window": time_window
+        }) as span:
+            cutoff_time = time.time() - time_window
+            
+            # Filter records for this model and time window
+            model_records = [
+                r for r in self.cost_records
+                if r.model_id == model_id and r.timestamp >= cutoff_time
+            ]
+            
+            if not model_records:
+                span.set_attribute("no_records", True)
+                return {
+                    "model_id": model_id,
+                    "total_cost": 0.0,
+                    "total_tokens": 0,
+                    "requests": 0,
+                    "average_cost_per_request": 0.0,
+                    "average_tokens_per_request": 0
+                }
+            
+            # Calculate statistics
+            total_cost = sum(r.cost_incurred for r in model_records)
+            total_tokens = sum(r.tokens_used for r in model_records)
+            requests = len(model_records)
+            
+            stats = {
+                "model_id": model_id,
+                "total_cost": total_cost,
+                "total_tokens": total_tokens,
+                "requests": requests,
+                "average_cost_per_request": total_cost / requests if requests > 0 else 0.0,
+                "average_tokens_per_request": total_tokens / requests if requests > 0 else 0
+            }
+            
+            span.set_attribute("total_cost", total_cost)
+            span.set_attribute("requests", requests)
+            
+            return stats
+    
+    def get_user_cost(self, user_id: str, time_window: int = 3600) -> Dict[str, Any]:
+        """Get cost statistics for a user.
+        
+        Args:
+            user_id: The user ID
+            time_window: Time window in seconds
+            
+        Returns:
+            Cost statistics for the user
+        """
+        with tracer.start_as_current_span("get_user_cost", attributes={
+            "user_id": user_id,
+            "time_window": time_window
+        }) as span:
+            cutoff_time = time.time() - time_window
+            
+            # Filter records for this user and time window
+            user_records = [
+                r for r in self.cost_records
+                if r.user_id == user_id and r.timestamp >= cutoff_time
+            ]
+            
+            if not user_records:
+                span.set_attribute("no_records", True)
+                return {
+                    "user_id": user_id,
+                    "total_cost": 0.0,
+                    "total_tokens": 0,
+                    "requests": 0,
+                    "average_cost_per_request": 0.0,
+                    "models_used": []
+                }
+            
+            # Calculate statistics
+            total_cost = sum(r.cost_incurred for r in user_records)
+            total_tokens = sum(r.tokens_used for r in user_records)
+            requests = len(user_records)
+            
+            # Get models used
+            models_used = list(set(r.model_id for r in user_records))
+            
+            stats = {
+                "user_id": user_id,
+                "total_cost": total_cost,
+                "total_tokens": total_tokens,
+                "requests": requests,
+                "average_cost_per_request": total_cost / requests if requests > 0 else 0.0,
+                "models_used": models_used
+            }
+            
+            span.set_attribute("total_cost", total_cost)
+            span.set_attribute("requests", requests)
+            span.set_attribute("models_used_count", len(models_used))
+            
+            return stats
+    
     def reset_stats(self):
         """Reset all statistics."""
         self.model_usage_records.clear()
         self.channel_performance_records.clear()
+        self.cost_records.clear()
         self.error_records.clear()

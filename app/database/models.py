@@ -83,3 +83,61 @@ class UserFeedback(Base):
     __table_args__ = (
         CheckConstraint('score >= 1 AND score <= 5', name='check_score_range'),
     )
+
+
+class CostRecord(Base):
+    """Detailed cost record table."""
+    __tablename__ = "cost_records"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(UUID(as_uuid=True), ForeignKey("chat_logs.request_id"), nullable=False, index=True)
+    user_id = Column(String(100), index=True)
+    model_id = Column(String(50), ForeignKey("llm_models.model_id"), nullable=False, index=True)
+    tokens_input = Column(Integer, nullable=False)
+    tokens_output = Column(Integer, nullable=False)
+    cost_input = Column(DECIMAL(10, 6), nullable=False)
+    cost_output = Column(DECIMAL(10, 6), nullable=False)
+    total_cost = Column(DECIMAL(10, 6), nullable=False, index=True)
+    intent = Column(String(50), index=True)
+    complexity = Column(DECIMAL(5, 2))
+    timestamp = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+
+
+class ModelPrice(Base):
+    """Model price history table."""
+    __tablename__ = "model_prices"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(String(50), ForeignKey("llm_models.model_id"), nullable=False, index=True)
+    input_price_per_1k = Column(DECIMAL(10, 6), nullable=False)
+    output_price_per_1k = Column(DECIMAL(10, 6), nullable=False)
+    effective_date = Column(TIMESTAMP(timezone=True), server_default=func.now(), index=True)
+    is_current = Column(Boolean, default=True, index=True)
+
+
+class UserQuota(Base):
+    """User cost quota table."""
+    __tablename__ = "user_quotas"
+    
+    user_id = Column(String(100), primary_key=True, index=True)
+    daily_quota = Column(DECIMAL(10, 2), nullable=False, default=10.0)
+    monthly_quota = Column(DECIMAL(10, 2), nullable=False, default=100.0)
+    daily_used = Column(DECIMAL(10, 2), nullable=False, default=0.0)
+    monthly_used = Column(DECIMAL(10, 2), nullable=False, default=0.0)
+    last_reset_date = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True)
+
+
+class CostBudget(Base):
+    """Cost budget management table."""
+    __tablename__ = "cost_budgets"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    budget_type = Column(String(20), nullable=False, index=True)  # global, model, user
+    target_id = Column(String(100), index=True)  # model_id or user_id, null for global
+    daily_budget = Column(DECIMAL(10, 2), nullable=False)
+    monthly_budget = Column(DECIMAL(10, 2), nullable=False)
+    daily_spent = Column(DECIMAL(10, 2), nullable=False, default=0.0)
+    monthly_spent = Column(DECIMAL(10, 2), nullable=False, default=0.0)
+    last_reset_date = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    alert_threshold = Column(DECIMAL(5, 2), nullable=False, default=80.0)  # percentage

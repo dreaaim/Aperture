@@ -29,6 +29,7 @@ from typing import List, Optional, Dict, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.services.model_service import ModelService
 from app.services.enhanced_intent_service import EnhancedIntentService
+from app.services.cost_optimization_service import CostOptimizationService
 from app.models import ModelStatus
 from app.utils.telemetry import get_tracer
 from app.config import settings
@@ -40,14 +41,16 @@ tracer = get_tracer()
 class RoutingService:
     """Intelligent routing service for model selection."""
     
-    def __init__(self, model_service: ModelService):
+    def __init__(self, model_service: ModelService, cost_optimization_service: Optional[CostOptimizationService] = None):
         """Initialize the routing service.
         
         Args:
             model_service: The model service instance
+            cost_optimization_service: Optional cost optimization service
         """
         self.model_service = model_service
         self.intent_service = EnhancedIntentService()
+        self.cost_optimization_service = cost_optimization_service
         self.active_requests: Dict[str, int] = {}  # 活跃请求计数
         self.model_health: Dict[str, bool] = {}  # 模型健康状态
     
@@ -147,6 +150,95 @@ class RoutingService:
             
             return selected_model
     
+    async def get_model_with_cost_optimization(self, query: str, intent: str, 
+                                             reasoning_level: Optional[str] = None, 
+                                             budget_constraint: Optional[float] = None) -> ModelStatus:
+        """Get a model using cost optimization.
+        
+        Args:
+            query: The user query
+            intent: The intent category
+            reasoning_level: Optional reasoning level
+            budget_constraint: Optional budget constraint per request
+            
+        Returns:
+            A model selected based on cost optimization
+        """
+        with tracer.start_as_current_span("get_model_with_cost_optimization", attributes={
+            "intent": intent,
+            "reasoning_level": reasoning_level or "medium",
+            "budget_constraint": budget_constraint or 0
+        }) as span:
+            # Calculate complexity if not provided
+            complexity = self.get_intent_complexity(query)
+            
+            # Use cost optimization service if available
+            if self.cost_optimization_service:
+                try:
+                    # Get model recommendations
+                    recommendations = await self.cost_optimization_service.get_model_recommendations(
+                        query=query,
+                        intent=intent,
+                        complexity=complexity,
+                        budget_constraint=budget_constraint,
+                        max_recommendations=3
+                    )
+                    
+                    if recommendations:
+                        # Get recommended model IDs
+                        recommended_model_ids = [rec.model_id for rec in recommendations if rec.is_recommended]
+                        
+                        if recommended_model_ids:
+                            # Get available models from model service
+                            available_models = self.model_service.get_available_models()
+                            
+                            # Filter by recommended models and health status
+                            healthy_models = [
+                                model for model in available_models 
+                                if model.model_id in recommended_model_ids 
+                                and self.model_health.get(model.model_id, True)
+                            ]
+                            
+                            if healthy_models:
+                                # Select the first healthy recommended model
+                                selected_model = healthy_models[0]
+                                span.set_attribute("cost_optimized", True)
+                                span.set_attribute("recommendations_count", len(recommendations))
+                            else:
+                                # Fallback to weighted selection
+                                selected_model = self.get_model_by_weight(intent, reasoning_level, complexity)
+                                span.set_attribute("fallback_to_weighted", True)
+                        else:
+                            # Fallback to weighted selection
+                            selected_model = self.get_model_by_weight(intent, reasoning_level, complexity)
+                            span.set_attribute("no_recommendations", True)
+                    else:
+                        # Fallback to weighted selection
+                        selected_model = self.get_model_by_weight(intent, reasoning_level, complexity)
+                        span.set_attribute("no_recommendations", True)
+                except Exception as e:
+                    # Fallback to weighted selection on error
+                    span.set_attribute("cost_optimization_error", str(e))
+                    selected_model = self.get_model_by_weight(intent, reasoning_level, complexity)
+            else:
+                # Fallback to weighted selection if cost optimization service not available
+                selected_model = self.get_model_by_weight(intent, reasoning_level, complexity)
+                span.set_attribute("cost_optimization_unavailable", True)
+            
+            # Set reasoning level if provided
+            if reasoning_level:
+                selected_model.reasoning_level = reasoning_level
+            
+            # Increment active requests
+            self.active_requests[selected_model.model_id] = self.active_requests.get(selected_model.model_id, 0) + 1
+            
+            # Set span attributes
+            span.set_attribute("selected_model_id", selected_model.model_id)
+            span.set_attribute("complexity", complexity)
+            span.set_attribute("active_requests", self.active_requests.get(selected_model.model_id, 0))
+            
+            return selected_model
+    
     def _calculate_model_weight(self, model: ModelStatus, intent: str, complexity: Optional[float] = None) -> float:
         """Calculate weight for a model based on its properties and intent.
         
@@ -208,7 +300,7 @@ class RoutingService:
             "satisfaction": weights.history * (1 + complexity * 0.5),
             "cost": weights.price * (1 - complexity * 0.3),
             "quota": weights.quota,
-            "quality": weights.difficulty_match
+            "quality": weights.difficulty_match * (1 + complexity * 0.4)
         }
         
         # Calculate final score
@@ -228,6 +320,16 @@ class RoutingService:
         # API format adjustments
         if model.api_format == "openai":
             score *= 1.1  # Slightly prefer OpenAI for compatibility
+        
+        # Ensure score is always positive
+        if score <= 0:
+            # Fallback to a base score based on quality tier
+            tier_base_score = {
+                "large": 0.8,
+                "medium": 0.6,
+                "small": 0.4
+            }
+            score = tier_base_score.get(model.quality_tier, 0.5)
         
         return score
     
