@@ -109,11 +109,275 @@ Aperture 使用三级缓存策略，根据相似度阈值决定处理方式：
 
 意图分类和难度估计是 Aperture 智能路由的基础，它们帮助系统理解用户查询的性质和复杂度，从而选择最合适的模型。
 
-### 意图分类
+### 增强意图分类
+
+#### 概述
+
+Aperture 提供了一个增强的意图分类服务，结合了多种方法来提高意图识别的准确性和可靠性：
+
+1. **关键词匹配**：基于改进的关键词计数方法
+2. **向量检索**：通过文本嵌入和相似度计算进行匹配
+3. **RRF混合检索**：融合关键词匹配和向量检索的结果
+4. **大模型意图识别**：当混合检索的置信度不足时，使用大模型进行最终判断
+
+#### 工作流程
+
+1. **关键词匹配**：计算查询与每个意图类别的关键词匹配度
+2. **向量检索**：生成查询的文本嵌入，并与意图类别的嵌入计算相似度
+3. **RRF混合检索**：使用倒数排名融合算法融合两种方法的结果
+4. **阈值判断**：如果混合检索的置信度 ≥ 0.8，直接采纳结果
+5. **大模型回退**：如果置信度 < 0.8，使用大模型进行最终意图识别
+
+#### 核心实现
+
+```python
+class EnhancedIntentService:
+    """增强的意图分类服务。
+    
+    此服务结合多种方法进行意图分类：
+    - 关键词匹配
+    - 向量检索
+    - RRF混合检索
+    - 大模型意图识别
+    """
+    
+    def classify_intent(self, query: str) -> Dict[str, any]:
+        """使用混合方法对查询进行意图分类。
+        
+        Args:
+            query: 用户查询字符串
+            
+        Returns:
+            包含意图、置信度、方法和详细信息的字典
+        """
+        # 步骤 1: 执行关键词匹配
+        keyword_results = self._keyword_match(query)
+        
+        # 步骤 2: 检查关键词匹配分数是否都很低
+        max_keyword_score = keyword_results[0][1] if keyword_results else 0.0
+        if max_keyword_score < 0.1:
+            # 所有关键词匹配分数都很低，应为通用意图
+            return {
+                "intent": "general",
+                "confidence": 0.5,
+                "method": "hybrid",
+                "details": {
+                    "keyword_results": keyword_results,
+                    "vector_results": [],
+                    "fused_results": [],
+                    "normalized_fused_results": []
+                }
+            }
+        
+        # 步骤 3: 执行向量检索
+        vector_results = self._vector_retrieval(query)
+        
+        # 步骤 4: 执行 RRF 融合
+        fused_results = self._rrf_fusion(keyword_results, vector_results)
+        
+        # 步骤 5: 归一化融合分数到 0-1 范围
+        normalized_fused_results = []
+        if fused_results:
+            max_score = fused_results[0][1]
+            if max_score > 0:
+                normalized_fused_results = [(intent, score / max_score) 
+                                         for intent, score in fused_results]
+            else:
+                normalized_fused_results = [(intent, 0.0) for intent, score in fused_results]
+        
+        # 步骤 6: 检查置信度阈值
+        if normalized_fused_results and normalized_fused_results[0][1] >= 0.8:
+            # 置信度足够高，使用混合结果
+            intent, confidence = normalized_fused_results[0]
+            return {
+                "intent": intent,
+                "confidence": confidence,
+                "method": "hybrid",
+                "details": {
+                    "keyword_results": keyword_results,
+                    "vector_results": vector_results,
+                    "fused_results": fused_results,
+                    "normalized_fused_results": normalized_fused_results
+                }
+            }
+        else:
+            # 置信度不足，使用大模型
+            intent, confidence = self._llm_intent_recognition(
+                query, keyword_results, vector_results
+            )
+            return {
+                "intent": intent,
+                "confidence": confidence,
+                "method": "llm",
+                "details": {
+                    "keyword_results": keyword_results,
+                    "vector_results": vector_results,
+                    "fused_results": fused_results,
+                    "normalized_fused_results": normalized_fused_results
+                }
+            }
+```
+
+#### 关键词匹配实现
+
+```python
+def _keyword_match(self, query: str) -> List[Tuple[str, float]]:
+    """使用直接关键词计数执行关键词匹配。
+    
+    Args:
+        query: 用户查询字符串
+        
+    Returns:
+        按分数降序排序的 (intent, score) 元组列表
+    """
+    # 将查询转换为小写
+    query_lower = query.lower()
+    
+    # 计算每个意图的关键词匹配分数
+    results = []
+    for intent, keywords in self.intent_keywords.items():
+        # 计算匹配的关键词数量
+        match_count = sum(1 for keyword in keywords if keyword.lower() in query_lower)
+        # 计算分数作为匹配关键词与总关键词的比率
+        if keywords:
+            score = match_count / len(keywords)
+        else:
+            score = 0.0
+        results.append((intent, score))
+    
+    # 按分数降序排序
+    results.sort(key=lambda x: x[1], reverse=True)
+    
+    return results
+```
+
+#### 向量检索实现
+
+```python
+def _vector_retrieval(self, query: str, topk: int = 3) -> List[Tuple[str, float]]:
+    """执行向量检索进行意图匹配。
+    
+    Args:
+        query: 用户查询字符串
+        topk: 返回的顶级结果数量
+        
+    Returns:
+        按分数降序排序的 (intent, score) 元组列表
+    """
+    # 步骤 1: 为查询生成嵌入
+    query_embedding = self.cache_service.embed_text(query)
+    
+    # 步骤 2: 计算查询嵌入与意图嵌入的相似度
+    similarities = []
+    for intent, embedding in self.intent_embeddings.items():
+        # 计算余弦相似度
+        similarity = calc_cosine_similarity(query_embedding, embedding)
+        similarities.append((intent, similarity))
+    
+    # 步骤 3: 按相似度排序并返回 topk
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    return similarities[:topk]
+```
+
+#### RRF 混合检索实现
+
+```python
+def _rrf_fusion(self, keyword_results: List[Tuple[str, float]], 
+               vector_results: List[Tuple[str, float]], 
+               k: int = 60) -> List[Tuple[str, float]]:
+    """执行倒数排名融合 (RRF) 以组合结果。
+    
+    Args:
+        keyword_results: 关键词匹配结果
+        vector_results: 向量检索结果
+        k: RRF 参数（通常为 60）
+        
+    Returns:
+        按分数降序排序的 (intent, score) 元组列表
+    """
+    # 创建存储融合分数的字典
+    fused_scores = {}
+    
+    # 处理关键词结果
+    for rank, (intent, score) in enumerate(keyword_results):
+        if intent not in fused_scores:
+            fused_scores[intent] = 0
+        # 结合基于排名的分数和原始相似度分数
+        fused_scores[intent] += (1 / (rank + k)) * (score + 1)  # 添加 1 以避免零分数
+    
+    # 处理向量结果
+    for rank, (intent, score) in enumerate(vector_results):
+        if intent not in fused_scores:
+            fused_scores[intent] = 0
+        # 结合基于排名的分数和原始相似度分数
+        fused_scores[intent] += (1 / (rank + k)) * (score + 1)  # 添加 1 以避免零分数
+    
+    # 转换为列表并排序
+    fused_results = sorted(fused_scores.items(), 
+                         key=lambda x: x[1], 
+                         reverse=True)
+    
+    return fused_results
+```
+
+#### 大模型意图识别实现
+
+```python
+def _llm_intent_recognition(self, query: str, 
+                           keyword_results: List[Tuple[str, float]], 
+                           vector_results: List[Tuple[str, float]]) -> Tuple[str, float]:
+    """使用大模型进行意图识别作为回退。
+    
+    Args:
+        query: 用户查询字符串
+        keyword_results: 关键词匹配结果
+        vector_results: 向量检索结果
+        
+    Returns:
+        包含意图和置信度的元组
+    """
+    try:
+        # 步骤 1: 选择适合意图识别的模型
+        model = self.model_service.select_model("general", "medium")
+        
+        # 步骤 2: 构建意图识别提示
+        prompt = self._construct_intent_prompt(query, keyword_results, vector_results)
+        
+        # 步骤 3: 获取模型的适当适配器
+        adapter = self.adapter_factory.get_adapter(model)
+        
+        # 步骤 4: 执行模型提示
+        result = adapter.execute(prompt=prompt, temperature=0.0, max_tokens=200)
+        
+        # 步骤 5: 解析响应
+        response_text = result.get("text", "")
+        parsed_result = self._parse_llm_response(response_text)
+        
+        if parsed_result:
+            return parsed_result
+        else:
+            # 如果解析失败，回退到融合结果
+            fused_results = self._rrf_fusion(keyword_results, vector_results)
+            if fused_results:
+                return fused_results[0]
+            else:
+                return "general", 0.5
+                
+    except Exception as e:
+        # 如果大模型出错，回退到融合结果
+        print(f"Error in LLM intent recognition: {str(e)}")
+        fused_results = self._rrf_fusion(keyword_results, vector_results)
+        if fused_results:
+            return fused_results[0]
+        else:
+            return "general", 0.5
+```
+
+### 传统意图分类
 
 #### 工作原理
 
-Aperture 使用基于关键词的意图分类方法，将用户查询分为不同的类别：
+除了增强的意图分类服务外，Aperture 还保留了传统的基于关键词的意图分类方法，将用户查询分为不同的类别：
 
 - **code**：代码相关查询
 - **chat**：闲聊对话

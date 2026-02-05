@@ -81,8 +81,9 @@ class CacheThresholds(BaseSettings):
 class ModelConfig(BaseSettings):
     """Configuration for a single model.
     
-    This class defines the configuration for a single LLM model, including:
+    This class defines the configuration for a single model, including:
     - model_id: Unique identifier for the model
+    - model_type: Type of the model (llm, embedding, reranker)
     - price_per_1k_tokens: Price per 1000 tokens (in dollars)
     - remaining_tokens: Remaining tokens quota for the model
     - quality_tier: Quality tier of the model (small, medium, large)
@@ -92,10 +93,15 @@ class ModelConfig(BaseSettings):
     - rate_limit: Rate limit per minute
     - max_concurrency: Maximum concurrent requests
     - timeout: Request timeout in seconds
+    - embedding_dimension: Embedding vector dimension (for embedding models)
+    - max_input_length: Maximum input length (for reranker models)
     """
 
     # Unique identifier for the model
     model_id: str
+    
+    # Type of the model
+    model_type: str = "llm"
     
     # Price per 1000 tokens (in dollars)
     price_per_1k_tokens: float
@@ -123,6 +129,12 @@ class ModelConfig(BaseSettings):
     
     # Request timeout in seconds
     timeout: int = 30
+    
+    # Embedding vector dimension (for embedding models)
+    embedding_dimension: int = 1024
+    
+    # Maximum input length (for reranker models)
+    max_input_length: int = 4096
 
 
 class Settings(BaseSettings):
@@ -154,8 +166,10 @@ class Settings(BaseSettings):
     # Model catalog
     # List of available models with their configurations
     model_catalog: List[ModelConfig] = [
+        # LLM models
         ModelConfig(
             model_id="gpt-4o",
+            model_type="llm",
             price_per_1k_tokens=5.0,
             remaining_tokens=400000,
             quality_tier="large",
@@ -168,6 +182,7 @@ class Settings(BaseSettings):
         ),
         ModelConfig(
             model_id="claude-3.5-sonnet",
+            model_type="llm",
             price_per_1k_tokens=3.5,
             remaining_tokens=300000,
             quality_tier="large",
@@ -180,6 +195,7 @@ class Settings(BaseSettings):
         ),
         ModelConfig(
             model_id="gpt-4o-mini",
+            model_type="llm",
             price_per_1k_tokens=0.8,
             remaining_tokens=600000,
             quality_tier="medium",
@@ -192,6 +208,7 @@ class Settings(BaseSettings):
         ),
         ModelConfig(
             model_id="llama-3-8b",
+            model_type="llm",
             price_per_1k_tokens=0.2,
             remaining_tokens=1000000,
             quality_tier="small",
@@ -201,6 +218,47 @@ class Settings(BaseSettings):
             rate_limit=240,
             max_concurrency=30,
             timeout=15
+        ),
+        # Embedding models
+        ModelConfig(
+            model_id="text-embedding-3-small",
+            model_type="embedding",
+            price_per_1k_tokens=0.00015,
+            remaining_tokens=1000000,
+            quality_tier="small",
+            api_format="openai",
+            enabled=True,
+            rate_limit=1000,
+            max_concurrency=50,
+            timeout=10,
+            embedding_dimension=1536
+        ),
+        ModelConfig(
+            model_id="text-embedding-3-large",
+            model_type="embedding",
+            price_per_1k_tokens=0.0006,
+            remaining_tokens=500000,
+            quality_tier="large",
+            api_format="openai",
+            enabled=True,
+            rate_limit=500,
+            max_concurrency=25,
+            timeout=15,
+            embedding_dimension=3072
+        ),
+        # Reranker models
+        ModelConfig(
+            model_id="rerank-english-v3.0",
+            model_type="reranker",
+            price_per_1k_tokens=0.0008,
+            remaining_tokens=500000,
+            quality_tier="medium",
+            api_format="cohere",
+            enabled=True,
+            rate_limit=300,
+            max_concurrency=20,
+            timeout=10,
+            max_input_length=4096
         ),
     ]
     
