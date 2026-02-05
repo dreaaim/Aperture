@@ -204,6 +204,10 @@ class Settings(BaseSettings):
         ),
     ]
     
+    # Database configuration
+    # PostgreSQL connection string
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/aperture"
+    
     class Config:
         """Pydantic settings configuration.
         

@@ -9,3 +9,6 @@ opentelemetry-sdk>=1.24.0
 opentelemetry-exporter-otlp-proto-http>=1.24.0
 opentelemetry-instrumentation-fastapi>=0.46.0
 opentelemetry-instrumentation-requests>=0.46.0
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+pgvector>=0.2.0

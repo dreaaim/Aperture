@@ -26,7 +26,7 @@ Example:
     model = model_service.select_model(intent)
 """
 
-from app.repositories.memory_repository import MemoryRepository
+from app.repositories.postgresql_repository import PostgreSQLRepository
 from app.services.cache_service import CacheService
 from app.services.intent_service import IntentService
 from app.services.model_service import ModelService
@@ -44,7 +44,7 @@ class Container:
     and that dependencies between services are properly managed.
     
     Attributes:
-        repository: The MemoryRepository instance
+        repository: The PostgreSQLRepository instance
         cache_service: The CacheService instance
         intent_service: The IntentService instance
         model_service: The ModelService instance
@@ -60,7 +60,9 @@ class Container:
         with tracer.start_as_current_span("container_init") as span:
             # Initialize repository
             # The repository is a dependency for some services
-            self.repository = MemoryRepository()
+            self.repository = PostgreSQLRepository()
+            # Initialize default models
+            self.repository.initialize_models()
             span.set_attribute("repository_initialized", True)
             
             # Initialize services
@@ -128,21 +130,21 @@ class Container:
             span.set_attribute("service_type", "ModelService")
             return self.model_service
 
-    def get_repository(self) -> MemoryRepository:
-        """Get an instance of MemoryRepository.
+    def get_repository(self) -> PostgreSQLRepository:
+        """Get an instance of PostgreSQLRepository.
         
         Returns:
-            The MemoryRepository instance
+            The PostgreSQLRepository instance
             
         Example:
             >>> container = Container()
             >>> repository = container.get_repository()
             >>> type(repository)
-            <class 'app.repositories.memory_repository.MemoryRepository'>
+            <class 'app.repositories.postgresql_repository.PostgreSQLRepository'>
         """
         # Create span for repository retrieval
         with tracer.start_as_current_span("get_repository") as span:
-            span.set_attribute("service_type", "MemoryRepository")
+            span.set_attribute("service_type", "PostgreSQLRepository")
             return self.repository
 
 
