@@ -18,9 +18,9 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from app.config import settings
 from app.models import ModelStatus
-from app.adapters.embedding_adapter import EmbeddingAdapter
-from app.adapters.reranker_adapter import RerankerAdapter
-from app.adapters.llm_adapter import LLMAdapter
+from app.adapters.types.embedding_adapter import EmbeddingAdapter
+from app.adapters.types.reranker_adapter import RerankerAdapter
+from app.adapters.types.llm_adapter import LLMAdapter
 
 
 def test_model_configuration():

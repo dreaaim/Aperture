@@ -24,10 +24,10 @@ Example:
 
 from typing import Dict, Optional
 from app.models import ModelStatus
-from app.services.model_adapters.openai_adapter import OpenAIAdapter
-from app.services.model_adapters.claude_adapter import ClaudeAdapter
-from app.services.model_adapters.gemini_adapter import GeminiAdapter
-from app.services.model_adapters.base_adapter import ModelAdapter
+from app.adapters.providers.openai_adapter import OpenAIAdapter
+from app.adapters.providers.claude_adapter import ClaudeAdapter
+from app.adapters.providers.gemini_adapter import GeminiAdapter
+from app.adapters.base.provider_base import ModelAdapter
 
 
 class AdapterFactory:

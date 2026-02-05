@@ -36,7 +36,7 @@ Example:
 """
 
 from typing import List, Optional, Any
-from app.adapters.base_adapter import BaseAdapter
+from app.adapters.base.core_adapter import BaseAdapter
 from app.models import ModelStatus
 from app.utils.telemetry import get_tracer
 

@@ -25,7 +25,7 @@ Example:
 """
 
 from typing import Dict, Any
-from app.services.model_adapters.base_adapter import ModelAdapter
+from app.adapters.base.provider_base import ModelAdapter
 from app.models import ModelStatus
 
 

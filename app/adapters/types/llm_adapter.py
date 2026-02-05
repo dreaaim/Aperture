@@ -42,7 +42,7 @@ Example:
 """
 
 from typing import List, Dict, Any, Optional
-from app.adapters.base_adapter import BaseAdapter
+from app.adapters.base.core_adapter import BaseAdapter
 from app.models import ModelStatus
 from app.utils.telemetry import get_tracer
 
