@@ -228,6 +228,36 @@ Aperture 支持通过环境变量覆盖配置。以下是常用的环境变量�
 | gpt-4o-mini | 0.8 | 600000 | medium |
 | llama-3-8b | 0.2 | 1000000 | small |
 
+### 模型适配器配置
+
+模型适配器配置在 `app/services/model_adapters/` 目录下，用于处理不同 API 格式的模型请求。
+
+#### 配置示例
+
+```python
+# 在 app/services/model_adapters/__init__.py 中注册适配器
+from .base_adapter import BaseModelAdapter
+from .claude_adapter import ClaudeAdapter
+from .openai_adapter import OpenAIAdapter
+
+# 模型适配器映射
+model_adapters = {
+    "claude": ClaudeAdapter,
+    "openai": OpenAIAdapter
+}
+
+# 根据模型 ID 获取适配器
+def get_adapter(model_id: str) -> BaseModelAdapter:
+    # 简单映射，实际应用中可能需要更复杂的逻辑
+    if "claude" in model_id:
+        return model_adapters["claude"]()
+    elif "gpt" in model_id:
+        return model_adapters["openai"]()
+    else:
+        # 默认使用 OpenAI 适配器
+        return model_adapters["openai"]()
+```
+
 ## 使用场景示例
 
 ### 场景 1：代码生成

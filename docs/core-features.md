@@ -871,15 +871,256 @@ settings = Settings()
 - **可扩展性**：易于添加新的配置参数
 - **环境变量支持**：支持通过环境变量覆盖配置
 
+## 模型适配器
+
+### 概述
+
+模型适配器是 Aperture 的重要组件，用于处理不同 API 格式的模型请求。它提供了一个统一的接口，使系统能够与各种不同的模型服务无缝集成，包括 OpenAI、Claude 等。
+
+### 设计原理
+
+模型适配器采用了策略模式和工厂模式的组合设计：
+
+1. **基础适配器类**：定义统一的接口和通用方法
+2. **具体适配器类**：实现特定模型 API 的适配逻辑
+3. **适配器工厂**：根据模型 ID 或类型创建合适的适配器实例
+
+### 核心实现
+
+#### 基础适配器类
+
+```python
+class BaseModelAdapter:
+    """所有模型适配器的基础抽象类。
+    
+    定义了适配器必须实现的方法，确保所有适配器都提供一致的接口。
+    """
+    
+    def execute(self, prompt: str, temperature: float = 0.7, max_tokens: int = 1000) -> dict:
+        """执行模型提示并返回响应。
+        
+        Args:
+            prompt: 模型提示文本
+            temperature: 采样温度
+            max_tokens: 最大生成 token 数
+            
+        Returns:
+            包含生成文本的字典
+        """
+        raise NotImplementedError("Subclasses must implement execute method")
+    
+    def format_request(self, prompt: str, temperature: float, max_tokens: int) -> dict:
+        """格式化请求参数为模型特定格式。
+        
+        Args:
+            prompt: 模型提示文本
+            temperature: 采样温度
+            max_tokens: 最大生成 token 数
+            
+        Returns:
+            格式化后的请求字典
+        """
+        raise NotImplementedError("Subclasses must implement format_request method")
+    
+    def parse_response(self, response: dict) -> dict:
+        """解析模型响应为标准格式。
+        
+        Args:
+            response: 模型原始响应
+            
+        Returns:
+            标准化的响应字典
+        """
+        raise NotImplementedError("Subclasses must implement parse_response method")
+```
+
+#### Claude 适配器
+
+```python
+class ClaudeAdapter(BaseModelAdapter):
+    """Claude 模型的适配器。
+    
+    处理 Claude API 的请求格式化和响应解析。
+    """
+    
+    def execute(self, prompt: str, temperature: float = 0.7, max_tokens: int = 1000) -> dict:
+        """执行 Claude 模型提示。
+        
+        注意：此实现为示例，实际应用中需要调用真实的 Claude API。
+        """
+        # 格式化请求
+        formatted_request = self.format_request(prompt, temperature, max_tokens)
+        
+        # 这里应该是实际的 API 调用
+        # response = requests.post("https://api.anthropic.com/v1/messages", json=formatted_request, headers=headers)
+        
+        # 模拟响应
+        mock_response = {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"[Claude] {prompt}"
+                }
+            ]
+        }
+        
+        # 解析响应
+        return self.parse_response(mock_response)
+    
+    def format_request(self, prompt: str, temperature: float, max_tokens: int) -> dict:
+        """格式化请求为 Claude API 格式。"""
+        return {
+            "model": "claude-3.5-sonnet",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+    
+    def parse_response(self, response: dict) -> dict:
+        """解析 Claude API 响应。"""
+        text = ""
+        if "content" in response:
+            for item in response["content"]:
+                if item.get("type") == "text":
+                    text += item.get("text", "")
+        return {"text": text}
+```
+
+#### OpenAI 适配器
+
+```python
+class OpenAIAdapter(BaseModelAdapter):
+    """OpenAI 模型的适配器。
+    
+    处理 OpenAI API 的请求格式化和响应解析。
+    """
+    
+    def execute(self, prompt: str, temperature: float = 0.7, max_tokens: int = 1000) -> dict:
+        """执行 OpenAI 模型提示。
+        
+        注意：此实现为示例，实际应用中需要调用真实的 OpenAI API。
+        """
+        # 格式化请求
+        formatted_request = self.format_request(prompt, temperature, max_tokens)
+        
+        # 这里应该是实际的 API 调用
+        # response = requests.post("https://api.openai.com/v1/chat/completions", json=formatted_request, headers=headers)
+        
+        # 模拟响应
+        mock_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": f"[OpenAI] {prompt}"
+                    }
+                }
+            ]
+        }
+        
+        # 解析响应
+        return self.parse_response(mock_response)
+    
+    def format_request(self, prompt: str, temperature: float, max_tokens: int) -> dict:
+        """格式化请求为 OpenAI API 格式。"""
+        return {
+            "model": "gpt-4o",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+    
+    def parse_response(self, response: dict) -> dict:
+        """解析 OpenAI API 响应。"""
+        text = ""
+        if "choices" in response:
+            for choice in response["choices"]:
+                if "message" in choice and "content" in choice["message"]:
+                    text += choice["message"]["content"]
+        return {"text": text}
+```
+
+#### 适配器工厂
+
+```python
+class ModelAdapterFactory:
+    """模型适配器工厂，负责创建适当的适配器实例。
+    
+    根据模型 ID 或类型选择合适的适配器实现。
+    """
+    
+    def __init__(self):
+        """初始化适配器工厂。"""
+        self._adapters = {
+            "claude": ClaudeAdapter,
+            "openai": OpenAIAdapter
+        }
+    
+    def get_adapter(self, model_id: str) -> BaseModelAdapter:
+        """根据模型 ID 获取相应的适配器。
+        
+        Args:
+            model_id: 模型标识符
+            
+        Returns:
+            模型适配器实例
+        """
+        # 基于模型 ID 选择适配器
+        if "claude" in model_id.lower():
+            return self._adapters["claude"]()
+        elif any(prefix in model_id.lower() for prefix in ["gpt", "openai"]):
+            return self._adapters["openai"]()
+        else:
+            # 默认使用 OpenAI 适配器
+            return self._adapters["openai"]()
+    
+    def register_adapter(self, model_type: str, adapter_class: Type[BaseModelAdapter]):
+        """注册新的适配器类型。
+        
+        Args:
+            model_type: 模型类型标识符
+            adapter_class: 适配器类
+        """
+        self._adapters[model_type] = adapter_class
+```
+
+### 模型适配器的应用
+
+模型适配器在以下场景中发挥重要作用：
+
+1. **多模型集成**：无缝集成不同 API 格式的模型服务
+2. **请求标准化**：将统一的请求格式转换为模型特定格式
+3. **响应标准化**：将不同模型的响应转换为统一格式
+4. **错误处理**：集中处理不同模型的错误情况
+5. **可扩展性**：易于添加新的模型适配器
+
+### 模型适配器的优势
+
+- **统一接口**：提供一致的模型调用接口
+- **解耦设计**：将模型特定逻辑与核心业务逻辑分离
+- **可扩展性**：易于添加新的模型适配器
+- **灵活性**：支持多种模型服务和 API 格式
+- **可维护性**：集中管理模型特定的逻辑
+
 ## 总结
 
-Aperture 的核心功能包括语义缓存、意图分类、难度估计、模型选择和智能路由。这些功能协同工作，提供了一个高效、灵活、成本效益高的 LLM 路由系统。
+Aperture 的核心功能包括语义缓存、意图分类、难度估计、模型选择、智能路由和模型适配器。这些功能协同工作，提供了一个高效、灵活、成本效益高的 LLM 路由系统。
 
 ### 核心优势
 
 - **性能优化**：通过缓存机制减少处理时间
 - **成本降低**：为不同任务选择合适的模型，优化成本
 - **智能路由**：基于多因素分析选择最佳处理路径
+- **多模型支持**：通过适配器支持多种模型 API 格式
 - **可扩展性**：模块化设计，易于扩展和定制
 - **可观测性**：详细的日志记录和监控
 
@@ -889,5 +1130,6 @@ Aperture 的核心功能包括语义缓存、意图分类、难度估计、模�
 - **高流量 LLM 服务**：通过缓存机制提高响应速度和降低成本
 - **任务多样性场景**：处理不同类型和难度的用户查询
 - **需要智能路由的 LLM 应用**：自动将请求分配给最适合的模型
+- **多 API 格式集成**：统一管理不同 API 格式的模型服务
 
 Aperture 提供了一个轻量级但功能强大的框架，可以根据具体需求进行扩展和定制，为 LLM 服务的部署和管理提供了有力的工具。

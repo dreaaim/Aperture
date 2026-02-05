@@ -24,6 +24,11 @@ aperture/
 │   │   ├── container.py    # 依赖注入容器
 │   │   ├── intent_service.py     # 意图服务
 │   │   ├── model_service.py      # 模型服务
+│   │   ├── model_adapters/       # 模型适配器
+│   │   │   ├── base_adapter.py   # 基础适配器类
+│   │   │   ├── claude_adapter.py # Claude 适配器
+│   │   │   ├── openai_adapter.py # OpenAI 适配器
+│   │   │   └── __init__.py     # 适配器模块初始化
 │   │   └── __init__.py     # 服务模块初始化
 │   ├── utils/              # 工具函数
 │   │   ├── logger.py       # 日志工具
@@ -61,6 +66,7 @@ aperture/
 | 配置 | 管理应用配置 | app/config/ |
 | 存储 | 管理数据存储 | app/storage.py, app/repositories/ |
 | 服务 | 实现核心业务逻辑 | app/services/ |
+| 模型适配器 | 处理不同 API 格式的模型请求 | app/services/model_adapters/ |
 | 工具 | 提供通用工具函数 | app/utils/ |
 | 核心逻辑 | 实现路由和缓存等核心功能 | app/router.py, app/cache.py |
 | 数据模型 | 定义数据结构 | app/models.py |
@@ -299,6 +305,53 @@ def score_model(model: ModelStatus, difficulty: str) -> float:
     """使用自定义策略计算模型评分。"""
     # 实现自定义评分逻辑
     pass
+```
+
+#### 6. 模型适配器
+
+**默认实现**：支持 OpenAI 和 Claude 模型的适配器
+
+**扩展方法**：
+1. 创建新的适配器类，继承自 `BaseModelAdapter`
+2. 实现 `execute`、`format_request` 和 `parse_response` 方法
+3. 在 `ModelAdapterFactory` 中注册新的适配器
+
+**示例**：
+```python
+from app.services.model_adapters.base_adapter import BaseModelAdapter
+
+class CustomModelAdapter(BaseModelAdapter):
+    """自定义模型适配器。"""
+    
+    def execute(self, prompt: str, temperature: float = 0.7, max_tokens: int = 1000) -> dict:
+        # 格式化请求
+        formatted_request = self.format_request(prompt, temperature, max_tokens)
+        
+        # 这里应该是实际的 API 调用
+        # response = requests.post("https://api.custom-model.com/v1/completions", json=formatted_request, headers=headers)
+        
+        # 模拟响应
+        mock_response = {
+            "response": f"[Custom Model] {prompt}"
+        }
+        
+        # 解析响应
+        return self.parse_response(mock_response)
+    
+    def format_request(self, prompt: str, temperature: float, max_tokens: int) -> dict:
+        """格式化请求为自定义模型 API 格式。"""
+        return {
+            "prompt": prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+    
+    def parse_response(self, response: dict) -> dict:
+        """解析自定义模型 API 响应。"""
+        return {"text": response.get("response", "")}
+
+# 在 ModelAdapterFactory 中注册
+# factory.register_adapter("custom", CustomModelAdapter)
 ```
 
 ### 配置扩展
