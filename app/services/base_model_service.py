@@ -100,3 +100,33 @@ class BaseModelService(ABC):
             True if the model was updated successfully, False otherwise
         """
         pass
+    
+    @abstractmethod
+    def select_embedding_model(self) -> ModelStatus:
+        """Select the best embedding model.
+        
+        Returns:
+            The best embedding model based on scoring
+        """
+        pass
+    
+    @abstractmethod
+    def select_reranker_model(self) -> ModelStatus:
+        """Select the best reranker model.
+        
+        Returns:
+            The best reranker model based on scoring
+        """
+        pass
+    
+    @abstractmethod
+    def get_models_by_type(self, model_type: str) -> List[ModelStatus]:
+        """Get models by type.
+        
+        Args:
+            model_type: The type of models to get
+            
+        Returns:
+            List of models of the specified type
+        """
+        pass

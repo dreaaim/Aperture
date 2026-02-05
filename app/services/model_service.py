@@ -60,6 +60,7 @@ class ModelService(BaseModelService):
         self.model_catalog: List[ModelStatus] = [
             ModelStatus(
                 model_id=model.model_id,
+                model_type=getattr(model, 'model_type', 'llm'),
                 price_per_1k_tokens=model.price_per_1k_tokens,
                 remaining_tokens=model.remaining_tokens,
                 quality_tier=model.quality_tier,  # type: ignore
@@ -68,7 +69,9 @@ class ModelService(BaseModelService):
                 enabled=model.enabled,
                 rate_limit=model.rate_limit,
                 max_concurrency=model.max_concurrency,
-                timeout=model.timeout
+                timeout=model.timeout,
+                embedding_dimension=getattr(model, 'embedding_dimension', 1024),
+                max_input_length=getattr(model, 'max_input_length', 4096)
             )
             for model in settings.model_catalog
         ]
@@ -351,3 +354,137 @@ class ModelService(BaseModelService):
                     return True
             span.set_attribute("update_success", False)
             return False
+    
+    def select_embedding_model(self) -> ModelStatus:
+        """Select the best embedding model.
+        
+        Returns:
+            The best embedding model based on scoring
+            
+        Example:
+            >>> service = ModelService(repository)
+            >>> model = service.select_embedding_model()
+            >>> model.model_id
+            "text-embedding-3-small"
+        """
+        # Create span for embedding model selection
+        with tracer.start_as_current_span("select_embedding_model") as span:
+            # Filter enabled embedding models
+            embedding_models = [model for model in self.model_catalog if model.enabled and model.model_type == "embedding"]
+            
+            if not embedding_models:
+                span.set_attribute("error", "No embedding models available")
+                raise ValueError("No embedding models available")
+            
+            # Score embedding models
+            scored_models = []
+            for model in embedding_models:
+                # Calculate score based on price, quota, and quality
+                price_score = 1 / model.price_per_1k_tokens
+                max_tokens = max(1, max(m.remaining_tokens for m in embedding_models))
+                quota_score = model.remaining_tokens / max_tokens
+                quality_score = 1.0 if model.quality_tier == "large" else 0.7 if model.quality_tier == "medium" else 0.4
+                
+                # Calculate weighted score
+                score = (
+                    price_score * 0.3
+                    + quota_score * 0.3
+                    + quality_score * 0.4
+                )
+                scored_models.append((model, score))
+            
+            # Sort by score (descending)
+            scored_models.sort(key=lambda item: item[1], reverse=True)
+            
+            # Return the highest scoring model
+            selected_model = scored_models[0][0]
+            highest_score = scored_models[0][1]
+            
+            # Set span attributes
+            span.set_attribute("selected_model_id", selected_model.model_id)
+            span.set_attribute("selected_model_tier", selected_model.quality_tier)
+            span.set_attribute("selected_model_api_format", selected_model.api_format)
+            span.set_attribute("highest_score", highest_score)
+            span.set_attribute("model_count", len(embedding_models))
+            span.set_attribute("embedding_dimension", selected_model.embedding_dimension)
+            
+            return selected_model
+    
+    def select_reranker_model(self) -> ModelStatus:
+        """Select the best reranker model.
+        
+        Returns:
+            The best reranker model based on scoring
+            
+        Example:
+            >>> service = ModelService(repository)
+            >>> model = service.select_reranker_model()
+            >>> model.model_id
+            "rerank-english-v3.0"
+        """
+        # Create span for reranker model selection
+        with tracer.start_as_current_span("select_reranker_model") as span:
+            # Filter enabled reranker models
+            reranker_models = [model for model in self.model_catalog if model.enabled and model.model_type == "reranker"]
+            
+            if not reranker_models:
+                span.set_attribute("error", "No reranker models available")
+                raise ValueError("No reranker models available")
+            
+            # Score reranker models
+            scored_models = []
+            for model in reranker_models:
+                # Calculate score based on price, quota, and quality
+                price_score = 1 / model.price_per_1k_tokens
+                max_tokens = max(1, max(m.remaining_tokens for m in reranker_models))
+                quota_score = model.remaining_tokens / max_tokens
+                quality_score = 1.0 if model.quality_tier == "large" else 0.7 if model.quality_tier == "medium" else 0.4
+                
+                # Calculate weighted score
+                score = (
+                    price_score * 0.3
+                    + quota_score * 0.3
+                    + quality_score * 0.4
+                )
+                scored_models.append((model, score))
+            
+            # Sort by score (descending)
+            scored_models.sort(key=lambda item: item[1], reverse=True)
+            
+            # Return the highest scoring model
+            selected_model = scored_models[0][0]
+            highest_score = scored_models[0][1]
+            
+            # Set span attributes
+            span.set_attribute("selected_model_id", selected_model.model_id)
+            span.set_attribute("selected_model_tier", selected_model.quality_tier)
+            span.set_attribute("selected_model_api_format", selected_model.api_format)
+            span.set_attribute("highest_score", highest_score)
+            span.set_attribute("model_count", len(reranker_models))
+            span.set_attribute("max_input_length", selected_model.max_input_length)
+            
+            return selected_model
+    
+    def get_models_by_type(self, model_type: str) -> List[ModelStatus]:
+        """Get models by type.
+        
+        Args:
+            model_type: The type of models to get
+            
+        Returns:
+            List of models of the specified type
+            
+        Example:
+            >>> service = ModelService(repository)
+            >>> models = service.get_models_by_type("embedding")
+            >>> len(models)
+            2
+        """
+        # Create span for models by type lookup
+        with tracer.start_as_current_span("get_models_by_type", attributes={
+            "model_type": model_type
+        }) as span:
+            models = [model for model in self.model_catalog if model.model_type == model_type]
+            span.set_attribute("model_count", len(models))
+            span.set_attribute("enabled_model_count", len([m for m in models if m.enabled]))
+            return models

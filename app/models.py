@@ -77,6 +77,10 @@ class ModelStatus(BaseModel):
     
     Fields:
         model_id: Unique identifier for the model
+        model_type: Type of the model
+            - "llm": Large language model
+            - "embedding": Text embedding model
+            - "reranker": Document reranking model
         price_per_1k_tokens: Price in currency units per 1000 tokens
         remaining_tokens: Remaining token quota for the model
         quality_tier: Size/quality tier of the model
@@ -91,10 +95,15 @@ class ModelStatus(BaseModel):
         timeout: Request timeout in seconds
         reasoning_level: Current reasoning level
         processing_time: Processing time in milliseconds
+        # Embedding-specific fields
+        embedding_dimension: int = 1024  # Embedding vector dimension
+        # Reranker-specific fields
+        max_input_length: int = 4096  # Maximum input length for reranker
         
     Example:
         >>> ModelStatus(
         ...     model_id="gpt-3.5-turbo",
+        ...     model_type="llm",
         ...     price_per_1k_tokens=0.0015,
         ...     remaining_tokens=100000,
         ...     quality_tier="medium",
@@ -105,10 +114,11 @@ class ModelStatus(BaseModel):
         ...     max_concurrency=10,
         ...     timeout=30
         ... )
-        ModelStatus(model_id="gpt-3.5-turbo", price_per_1k_tokens=0.0015, remaining_tokens=100000, quality_tier="medium", ...)
+        ModelStatus(model_id="gpt-3.5-turbo", model_type="llm", price_per_1k_tokens=0.0015, remaining_tokens=100000, quality_tier="medium", ...)
     """
 
     model_id: str  # Unique identifier for the model
+    model_type: Literal["llm", "embedding", "reranker"] = "llm"  # Type of the model
     price_per_1k_tokens: float  # Price per 1000 tokens
     remaining_tokens: int  # Remaining token quota
     quality_tier: Literal["small", "medium", "large"]  # Model quality tier
@@ -120,6 +130,10 @@ class ModelStatus(BaseModel):
     timeout: int = 30  # Request timeout in seconds
     reasoning_level: str = "medium"  # Current reasoning level
     processing_time: float = 0.0  # Processing time in milliseconds
+    # Embedding-specific fields
+    embedding_dimension: int = 1024  # Embedding vector dimension
+    # Reranker-specific fields
+    max_input_length: int = 4096  # Maximum input length for reranker
 
 
 class RequestLog(BaseModel):
