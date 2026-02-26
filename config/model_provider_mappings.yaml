@@ -1,0 +1,349 @@
+# Aperture 模型-服务商映射关系配置
+# 定义每个模型在哪些服务商上可用，以及对应的价格和配额
+
+mappings:
+  # ============ GPT-4o 映射关系 ============
+  
+  - model_id: "gpt-4o"
+    provider_id: "openai"
+    provider_model_id: "gpt-4o"
+    price_input: 0.005
+    price_output: 0.015
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+    notes: "官方API，最稳定"
+
+  - model_id: "gpt-4o"
+    provider_id: "azure"
+    provider_model_id: "gpt-4o"
+    price_input: 0.005
+    price_output: 0.015
+    quota_limit: null
+    quota_used: 0
+    priority: 2
+    enabled: true
+    notes: "Azure云服务"
+
+  - model_id: "gpt-4o"
+    provider_id: "openrouter"
+    provider_model_id: "openai/gpt-4o"
+    price_input: 0.005
+    price_output: 0.015
+    quota_limit: 50
+    quota_used: 0
+    priority: 3
+    enabled: true
+    notes: "免费额度有限"
+
+  # ============ GPT-4 Turbo 映射关系 ============
+
+  - model_id: "gpt-4-turbo"
+    provider_id: "openai"
+    provider_model_id: "gpt-4-turbo"
+    price_input: 0.01
+    price_output: 0.03
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "gpt-4-turbo"
+    provider_id: "azure"
+    provider_model_id: "gpt-4-turbo"
+    price_input: 0.01
+    price_output: 0.03
+    quota_limit: null
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  # ============ GPT-3.5 Turbo 映射关系 ============
+
+  - model_id: "gpt-3.5-turbo"
+    provider_id: "openai"
+    provider_model_id: "gpt-3.5-turbo"
+    price_input: 0.0005
+    price_output: 0.0015
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "gpt-3.5-turbo"
+    provider_id: "azure"
+    provider_model_id: "gpt-35-turbo"
+    price_input: 0.0005
+    price_output: 0.0015
+    quota_limit: null
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  - model_id: "gpt-3.5-turbo"
+    provider_id: "openrouter"
+    provider_model_id: "openai/gpt-3.5-turbo"
+    price_input: 0.0005
+    price_output: 0.0015
+    quota_limit: 50
+    quota_used: 0
+    priority: 3
+    enabled: true
+
+  # ============ Claude 3 Opus 映射关系 ============
+
+  - model_id: "claude-3-opus"
+    provider_id: "anthropic"
+    provider_model_id: "claude-3-opus-20240229"
+    price_input: 0.015
+    price_output: 0.075
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "claude-3-opus"
+    provider_id: "openrouter"
+    provider_model_id: "anthropic/claude-3-opus"
+    price_input: 0.015
+    price_output: 0.075
+    quota_limit: 50
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  # ============ Claude 3 Sonnet 映射关系 ============
+
+  - model_id: "claude-3-sonnet"
+    provider_id: "anthropic"
+    provider_model_id: "claude-3-sonnet-20240229"
+    price_input: 0.003
+    price_output: 0.015
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "claude-3-sonnet"
+    provider_id: "openrouter"
+    provider_model_id: "anthropic/claude-3-sonnet"
+    price_input: 0.003
+    price_output: 0.015
+    quota_limit: 50
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  - model_id: "claude-3-sonnet"
+    provider_id: "modelscope"
+    provider_model_id: "Qwen/Qwen2.5-72B-Instruct"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 100
+    quota_used: 0
+    priority: 3
+    enabled: true
+    notes: "ModelScope免费推理"
+
+  # ============ Gemini 2 Flash 映射关系 ============
+
+  - model_id: "gemini-2-flash"
+    provider_id: "google"
+    provider_model_id: "gemini-2-flash"
+    price_input: 0.0001
+    price_output: 0.0004
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "gemini-2-flash"
+    provider_id: "google_ai_studio"
+    provider_model_id: "gemini-2-flash"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 20
+    quota_used: 0
+    priority: 2
+    enabled: true
+    notes: "Google AI Studio免费额度"
+
+  - model_id: "gemini-2-flash"
+    provider_id: "openrouter"
+    provider_model_id: "google/gemini-2-flash"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 50
+    quota_used: 0
+    priority: 3
+    enabled: true
+    notes: "OpenRouter免费模型"
+
+  # ============ Gemini 2 Pro 映射关系 ============
+
+  - model_id: "gemini-2-pro"
+    provider_id: "google"
+    provider_model_id: "gemini-2-pro"
+    price_input: 0.00025
+    price_output: 0.001
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "gemini-2-pro"
+    provider_id: "google_ai_studio"
+    provider_model_id: "gemini-2-pro"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 20
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  # ============ Llama 3 70B 映射关系 ============
+
+  - model_id: "llama-3-70b"
+    provider_id: "openrouter"
+    provider_model_id: "meta-llama/llama-3-70b-instruct"
+    price_input: 0.0007
+    price_output: 0.0009
+    quota_limit: 50
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "llama-3-70b"
+    provider_id: "huggingface_inference"
+    provider_model_id: "meta-llama/Meta-Llama-3-70B"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 100
+    quota_used: 0
+    priority: 2
+    enabled: true
+    notes: "HuggingFace免费推理"
+
+  - model_id: "llama-3-70b"
+    provider_id: "modelscope"
+    provider_model_id: "LLM-Research/Meta-Llama-3-70B"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 100
+    quota_used: 0
+    priority: 3
+    enabled: true
+
+  # ============ Qwen 2.5 72B 映射关系 ============
+
+  - model_id: "qwen-2.5-72b"
+    provider_id: "modelscope"
+    provider_model_id: "Qwen/Qwen2.5-72B-Instruct"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 100
+    quota_used: 0
+    priority: 1
+    enabled: true
+    notes: "ModelScope免费推理"
+
+  - model_id: "qwen-2.5-72b"
+    provider_id: "openrouter"
+    provider_model_id: "qwen/qwen-2.5-72b-instruct"
+    price_input: 0.0006
+    price_output: 0.0008
+    quota_limit: 50
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  # ============ DeepSeek Coder 33B 映射关系 ============
+
+  - model_id: "deepseek-coder-33b"
+    provider_id: "openrouter"
+    provider_model_id: "deepseek/deepseek-coder-33b-instruct"
+    price_input: 0.0004
+    price_output: 0.0006
+    quota_limit: 50
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "deepseek-coder-33b"
+    provider_id: "modelscope"
+    provider_model_id: "deepseek-ai/deepseek-coder-33b-instruct"
+    price_input: 0.0
+    price_output: 0.0
+    quota_limit: 100
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  # ============ Text Embedding 3 Large 映射关系 ============
+
+  - model_id: "text-embedding-3-large"
+    provider_id: "openai"
+    provider_model_id: "text-embedding-3-large"
+    price_input: 0.00013
+    price_output: 0.0
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "text-embedding-3-large"
+    provider_id: "azure"
+    provider_model_id: "text-embedding-3-large"
+    price_input: 0.00013
+    price_output: 0.0
+    quota_limit: null
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  # ============ Text Embedding 3 Small 映射关系 ============
+
+  - model_id: "text-embedding-3-small"
+    provider_id: "openai"
+    provider_model_id: "text-embedding-3-small"
+    price_input: 0.00002
+    price_output: 0.0
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  - model_id: "text-embedding-3-small"
+    provider_id: "azure"
+    provider_model_id: "text-embedding-3-small"
+    price_input: 0.00002
+    price_output: 0.0
+    quota_limit: null
+    quota_used: 0
+    priority: 2
+    enabled: true
+
+  # ============ DALL-E 3 映射关系 ============
+
+  - model_id: "dall-e-3"
+    provider_id: "openai"
+    provider_model_id: "dall-e-3"
+    price_input: 0.04
+    price_output: 0.0
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true
+
+  # ============ Whisper 映射关系 ============
+
+  - model_id: "whisper-1"
+    provider_id: "openai"
+    provider_model_id: "whisper-1"
+    price_input: 0.006
+    price_output: 0.0
+    quota_limit: null
+    quota_used: 0
+    priority: 1
+    enabled: true

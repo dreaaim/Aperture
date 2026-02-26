@@ -80,6 +80,43 @@ model_providers:
       rate_limit: 60
       # 最大并发请求数
       max_concurrency: 10
+    
+    # 免费服务商配置
+    openrouter_free:
+      # API 基础 URL
+      base_url: https://openrouter.ai/api/v1
+      # API 密钥
+      api_key: "your-openrouter-api-key"
+      # 请求超时时间（秒）
+      timeout: 30
+      # 每分钟速率限制
+      rate_limit: 20
+      # 最大并发请求数
+      max_concurrency: 10
+    
+    google_ai_studio:
+      # API 基础 URL
+      base_url: https://generativelanguage.googleapis.com/v1
+      # API 密钥
+      api_key: "your-google-ai-studio-api-key"
+      # 请求超时时间（秒）
+      timeout: 30
+      # 每分钟速率限制
+      rate_limit: 5
+      # 最大并发请求数
+      max_concurrency: 10
+    
+    huggingface_inference:
+      # API 基础 URL
+      base_url: https://api-inference.huggingface.co
+      # API 密钥
+      api_key: "your-huggingface-token"
+      # 请求超时时间（秒）
+      timeout: 30
+      # 每分钟速率限制
+      rate_limit: 10
+      # 最大并发请求数
+      max_concurrency: 10
 
 # 缓存阈值配置
 cache_thresholds:

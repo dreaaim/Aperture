@@ -1,0 +1,275 @@
+# Aperture 模型清单配置
+# 定义所有可用的模型及其能力
+
+models:
+  # ============ Premium Tier Models ============
+  
+  gpt-4o:
+    model_id: "gpt-4o"
+    model_name: "GPT-4 Omni"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+      - "vision"
+      - "function_calling"
+      - "json_mode"
+    context_window: 128000
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+      - "tools"
+      - "json_mode"
+      - "vision"
+      - "function_calling"
+    quality_tier: "premium"
+    base_price_input: 0.005
+    base_price_output: 0.015
+    enabled: true
+    description: "OpenAI's most advanced multimodal model"
+
+  gpt-4-turbo:
+    model_id: "gpt-4-turbo"
+    model_name: "GPT-4 Turbo"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+      - "vision"
+      - "function_calling"
+    context_window: 128000
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+      - "tools"
+      - "vision"
+    quality_tier: "premium"
+    base_price_input: 0.01
+    base_price_output: 0.03
+    enabled: true
+    description: "GPT-4 with improved speed and lower cost"
+
+  claude-3-opus:
+    model_id: "claude-3-opus"
+    model_name: "Claude 3 Opus"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+      - "vision"
+      - "tool_use"
+    context_window: 200000
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+      - "tools"
+      - "vision"
+    quality_tier: "premium"
+    base_price_input: 0.015
+    base_price_output: 0.075
+    enabled: true
+    description: "Anthropic's most powerful model"
+
+  claude-3-sonnet:
+    model_id: "claude-3-sonnet"
+    model_name: "Claude 3 Sonnet"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+      - "vision"
+      - "tool_use"
+    context_window: 200000
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+      - "tools"
+      - "vision"
+    quality_tier: "premium"
+    base_price_input: 0.003
+    base_price_output: 0.015
+    enabled: true
+    description: "Balanced performance and cost"
+
+  # ============ Standard Tier Models ============
+
+  gpt-3.5-turbo:
+    model_id: "gpt-3.5-turbo"
+    model_name: "GPT-3.5 Turbo"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+      - "function_calling"
+    context_window: 16385
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+      - "tools"
+      - "function_calling"
+    quality_tier: "standard"
+    base_price_input: 0.0005
+    base_price_output: 0.0015
+    enabled: true
+    description: "Fast and cost-effective for most tasks"
+
+  gemini-2-flash:
+    model_id: "gemini-2-flash"
+    model_name: "Gemini 2 Flash"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+      - "vision"
+    context_window: 1000000
+    max_output_tokens: 8192
+    features:
+      - "streaming"
+      - "vision"
+    quality_tier: "standard"
+    base_price_input: 0.0001
+    base_price_output: 0.0004
+    enabled: true
+    description: "Google's fast and efficient model"
+
+  gemini-2-pro:
+    model_id: "gemini-2-pro"
+    model_name: "Gemini 2 Pro"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+      - "vision"
+    context_window: 1000000
+    max_output_tokens: 8192
+    features:
+      - "streaming"
+      - "vision"
+    quality_tier: "premium"
+    base_price_input: 0.00025
+    base_price_output: 0.001
+    enabled: true
+    description: "Google's advanced reasoning model"
+
+  # ============ Open Source Models ============
+
+  llama-3-70b:
+    model_id: "llama-3-70b"
+    model_name: "Llama 3 70B"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+    context_window: 8192
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+    quality_tier: "standard"
+    base_price_input: 0.0007
+    base_price_output: 0.0009
+    enabled: true
+    description: "Meta's open-source large language model"
+
+  qwen-2.5-72b:
+    model_id: "qwen-2.5-72b"
+    model_name: "Qwen 2.5 72B"
+    model_type: "llm"
+    capabilities:
+      - "reasoning"
+      - "code"
+    context_window: 32768
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+    quality_tier: "standard"
+    base_price_input: 0.0006
+    base_price_output: 0.0008
+    enabled: true
+    description: "Alibaba's powerful open-source model"
+
+  deepseek-coder-33b:
+    model_id: "deepseek-coder-33b"
+    model_name: "DeepSeek Coder 33B"
+    model_type: "llm"
+    capabilities:
+      - "code"
+      - "reasoning"
+    context_window: 16384
+    max_output_tokens: 4096
+    features:
+      - "streaming"
+    quality_tier: "standard"
+    base_price_input: 0.0004
+    base_price_output: 0.0006
+    enabled: true
+    description: "Specialized for code generation"
+
+  # ============ Embedding Models ============
+
+  text-embedding-3-large:
+    model_id: "text-embedding-3-large"
+    model_name: "Text Embedding 3 Large"
+    model_type: "embedding"
+    capabilities:
+      - "embedding"
+    context_window: 8191
+    max_output_tokens: 0
+    features: []
+    quality_tier: "premium"
+    base_price_input: 0.00013
+    base_price_output: 0.0
+    enabled: true
+    embedding_dimension: 3072
+    description: "OpenAI's most capable embedding model"
+
+  text-embedding-3-small:
+    model_id: "text-embedding-3-small"
+    model_name: "Text Embedding 3 Small"
+    model_type: "embedding"
+    capabilities:
+      - "embedding"
+    context_window: 8191
+    max_output_tokens: 0
+    features: []
+    quality_tier: "standard"
+    base_price_input: 0.00002
+    base_price_output: 0.0
+    enabled: true
+    embedding_dimension: 1536
+    description: "Cost-effective embedding model"
+
+  # ============ Specialized Models ============
+
+  dall-e-3:
+    model_id: "dall-e-3"
+    model_name: "DALL-E 3"
+    model_type: "image"
+    capabilities:
+      - "image_generation"
+    context_window: 0
+    max_output_tokens: 0
+    features:
+      - "image_generation"
+    quality_tier: "premium"
+    base_price_input: 0.04
+    base_price_output: 0.0
+    enabled: true
+    description: "OpenAI's image generation model"
+
+  whisper-1:
+    model_id: "whisper-1"
+    model_name: "Whisper"
+    model_type: "audio"
+    capabilities:
+      - "speech_recognition"
+      - "translation"
+    context_window: 0
+    max_output_tokens: 0
+    features:
+      - "transcription"
+      - "translation"
+    quality_tier: "standard"
+    base_price_input: 0.006
+    base_price_output: 0.0
+    enabled: true
+    description: "OpenAI's speech recognition model"

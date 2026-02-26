@@ -31,13 +31,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from app.services.model_service import ModelService
 from app.services.enhanced_intent_service import EnhancedIntentService
 from app.services.cost_optimization_service import CostOptimizationService
+from app.services.quota_manager import QuotaManager
+from app.services.usage_tracker import UsageTracker
 from app.models import ModelStatus
 from app.utils.telemetry import get_tracer
 from app.config import settings
 from app.config.provider_config import ProviderManager
 from app.adapters.adapter_factory import UnifiedAdapterFactory
 
-# Get OpenTelemetry tracer
 tracer = get_tracer()
 
 
@@ -56,9 +57,11 @@ class RoutingService:
         self.cost_optimization_service = cost_optimization_service
         self.provider_manager = ProviderManager()
         self.adapter_factory = UnifiedAdapterFactory()
-        self.active_requests: Dict[str, int] = {}  # 活跃请求计数
-        self.model_health: Dict[str, bool] = {}  # 模型健康状态
-        self.provider_health: Dict[str, bool] = {}  # 服务商健康状态
+        self.quota_manager = QuotaManager(monitoring_service=None, settings=settings)
+        self.usage_tracker = UsageTracker(monitoring_service=None, provider_manager=self.provider_manager)
+        self.active_requests: Dict[str, int] = {}
+        self.model_health: Dict[str, bool] = {}
+        self.provider_health: Dict[str, bool] = {}
     
     def get_intent_complexity(self, query: str) -> float:
         """Calculate intent complexity score based on query.
@@ -97,13 +100,14 @@ class RoutingService:
             
             return complexity
     
-    def get_model_by_weight(self, intent: str, reasoning_level: Optional[str] = None, complexity: Optional[float] = None) -> ModelStatus:
+    def get_model_by_weight(self, intent: str, reasoning_level: Optional[str] = None, complexity: Optional[float] = None, user_id: Optional[str] = None) -> ModelStatus:
         """Get a model using weighted random routing.
         
         Args:
             intent: The intent category
             reasoning_level: Optional reasoning level
             complexity: Optional complexity score (0.0-1.0)
+            user_id: Optional user ID for quota checking
             
         Returns:
             A model selected based on weights
@@ -113,42 +117,43 @@ class RoutingService:
             "reasoning_level": reasoning_level or "medium",
             "complexity": complexity or 0.5
         }) as span:
-            # Get available models
             available_models = self.model_service.get_available_models()
             
-            # Filter out unhealthy models
             available_models = [model for model in available_models if self.model_health.get(model.model_id, True)]
             
-            # Filter models based on reasoning level support
             if reasoning_level and reasoning_level != "medium":
                 available_models = [model for model in available_models if model.reasoning_support]
             
+            if user_id:
+                quota_models = []
+                for model in available_models:
+                    quota_status = self.quota_manager.check_quota(user_id=user_id, model_id=model.model_id)
+                    if quota_status.is_available:
+                        quota_models.append(model)
+                
+                if quota_models:
+                    available_models = quota_models
+                    span.set_attribute("quota_filtered", True)
+            
             if not available_models:
                 span.set_attribute("no_models_available", True)
-                # Fallback to default model selection
                 return self.model_service.select_model(intent, reasoning_level)
             
-            # Calculate weights based on model properties
             weighted_models = []
             total_weight = 0.0
             
             for model in available_models:
-                # Calculate weight based on multiple factors
                 weight = self._calculate_model_weight(model, intent, complexity)
                 weighted_models.append((model, weight))
                 total_weight += weight
             
-            # Perform weighted random selection
             selected_model = self._weighted_random_selection(weighted_models, total_weight)
             
-            # Set reasoning level if provided
             if reasoning_level:
                 selected_model.reasoning_level = reasoning_level
             
-            # Increment active requests
             self.active_requests[selected_model.model_id] = self.active_requests.get(selected_model.model_id, 0) + 1
             
-            # Set span attributes
             span.set_attribute("selected_model_id", selected_model.model_id)
             span.set_attribute("selected_model_weight", next(w for m, w in weighted_models if m.model_id == selected_model.model_id))
             span.set_attribute("model_count", len(available_models))
@@ -616,12 +621,10 @@ class RoutingService:
         feature_match = len(set(required_features) & set(provider_features)) / len(required_features) if required_features else 1.0
         score += feature_match * 0.4
         
-        # Pricing score (free is better)
         pricing_tier = provider.get("pricing_tier", "standard")
         if pricing_tier == "free":
             score += 0.3
         
-        # Rate limit score (higher limits = better)
         rate_limits = provider.get("rate_limits", {})
         rpm = rate_limits.get("rpm", 60)
         tpm = rate_limits.get("tpm", 40000)
@@ -629,3 +632,44 @@ class RoutingService:
         score += min(rate_limit_score, 0.2)
         
         return score
+    
+    def track_request_usage(self, provider_id: str, model_id: str, 
+                           tokens: int, cost: float) -> None:
+        """Track request usage for a provider and model.
+        
+        Args:
+            provider_id: Provider identifier
+            model_id: Model identifier
+            tokens: Tokens used
+            cost: Cost incurred
+        """
+        self.usage_tracker.track_request(
+            provider_id=provider_id,
+            model_id=model_id,
+            tokens=tokens,
+            cost=cost
+        )
+    
+    def get_quota_status(self, user_id: Optional[str] = None,
+                        model_id: Optional[str] = None):
+        """Get quota status for a user or model.
+        
+        Args:
+            user_id: Optional user ID
+            model_id: Optional model ID
+            
+        Returns:
+            QuotaStatus object
+        """
+        return self.quota_manager.check_quota(user_id=user_id, model_id=model_id)
+    
+    def get_usage_report(self, provider_id: str):
+        """Get usage report for a provider.
+        
+        Args:
+            provider_id: Provider identifier
+            
+        Returns:
+            UsageReport object
+        """
+        return self.usage_tracker.get_usage_report(provider_id)

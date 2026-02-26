@@ -153,29 +153,77 @@ class CostOptimizationSettings(BaseSettings):
     - quota_critical_threshold: Threshold for quota critical alert (0-1)
     """
 
-    # Weight for cost factor in model scoring (0-1)
     cost_weight: float = 0.4
     
-    # Weight for performance factor in model scoring (0-1)
     performance_weight: float = 0.3
     
-    # Weight for capability matching factor in model scoring (0-1)
     capability_weight: float = 0.2
     
-    # Weight for reliability factor in model scoring (0-1)
     reliability_weight: float = 0.1
     
-    # Time to live for price and quota cache in seconds
     cache_ttl: int = 300
     
-    # Maximum size of price and quota cache
     max_cache_size: int = 10000
     
-    # Threshold for quota warning (0-1)
     quota_warning_threshold: float = 0.8
     
-    # Threshold for quota critical alert (0-1)
     quota_critical_threshold: float = 0.9
+
+
+class QuotaSettings(BaseSettings):
+    """Quota management configuration settings.
+    
+    This class defines configuration options for quota management:
+    - warning_threshold: Threshold for quota warning alerts (percentage)
+    - critical_threshold: Threshold for quota critical alerts (percentage)
+    - emergency_threshold: Threshold for quota emergency alerts (percentage)
+    - daily_reset_hour: Hour of day for daily quota reset (0-23)
+    - monthly_reset_day: Day of month for monthly quota reset (1-28)
+    - default_user_daily_quota: Default daily quota for new users
+    - default_user_monthly_quota: Default monthly quota for new users
+    - default_model_daily_quota: Default daily quota for models
+    - default_model_monthly_quota: Default monthly quota for models
+    """
+
+    warning_threshold: float = 80.0
+    
+    critical_threshold: float = 90.0
+    
+    emergency_threshold: float = 100.0
+    
+    daily_reset_hour: int = 0
+    
+    monthly_reset_day: int = 1
+    
+    default_user_daily_quota: float = 10.0
+    
+    default_user_monthly_quota: float = 100.0
+    
+    default_model_daily_quota: float = 100.0
+    
+    default_model_monthly_quota: float = 1000.0
+
+
+class UsageTrackerSettings(BaseSettings):
+    """Usage tracking configuration settings.
+    
+    This class defines configuration options for usage tracking:
+    - prediction_window_days: Number of days to predict usage for
+    - history_window_days: Number of days of history to analyze
+    - free_quota_check_interval: Interval in seconds for checking free quotas
+    - enable_predictions: Whether to enable usage predictions
+    - enable_anomaly_detection: Whether to enable anomaly detection
+    """
+
+    prediction_window_days: int = 7
+    
+    history_window_days: int = 30
+    
+    free_quota_check_interval: int = 300
+    
+    enable_predictions: bool = True
+    
+    enable_anomaly_detection: bool = True
 
 
 class DatabaseSettings(BaseSettings):
@@ -273,27 +321,22 @@ class Settings(BaseSettings):
     including nested configurations for various components.
     """
 
-    # Cache settings
     cache_thresholds: CacheThresholds = CacheThresholds()
     
-    # Router settings
     router_weights: RouterWeights = RouterWeights()
     
-    # Cost optimization settings
     cost_optimization: CostOptimizationSettings = CostOptimizationSettings()
     
-    # Database settings
+    quota_settings: QuotaSettings = QuotaSettings()
+    
+    usage_tracker: UsageTrackerSettings = UsageTrackerSettings()
+    
     database: DatabaseSettings = DatabaseSettings()
     
-    # Model provider settings
     model_providers: ModelProviderSettings = ModelProviderSettings()
     
-    # Embedding settings
-    # Dimension of text embeddings for semantic caching
     embedding_dim: int = 12
     
-    # Intent classification settings
-    # Keywords for classifying user intent
     intent_keywords: Dict[str, List[str]] = {
         "code": ["代码", "python", "java", "algorithm", "bug", "脚本"],
         "chat": ["天气", "你好", "闲聊", "心情", "笑话"],
@@ -301,10 +344,7 @@ class Settings(BaseSettings):
         "creative": ["写作", "故事", "创意", "营销", "文案"],
     }
     
-    # Model catalog
-    # List of available models with their configurations
     model_catalog: List[ModelConfig] = [
-        # LLM models
         ModelConfig(
             model_id="gpt-4o",
             model_type="llm",

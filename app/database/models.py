@@ -9,7 +9,7 @@ This module defines all database models for the application, including:
 All models use SQLAlchemy ORM and include pgvector support for vector embeddings.
 """
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, DECIMAL, TIMESTAMP, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, Text, Boolean, DECIMAL, TIMESTAMP, ForeignKey, CheckConstraint, BigInteger, Index
 from sqlalchemy.dialects.postgresql import UUID, Vector
 from sqlalchemy.sql import func
 from app.database import Base
@@ -133,11 +133,63 @@ class CostBudget(Base):
     __tablename__ = "cost_budgets"
     
     id = Column(Integer, primary_key=True, index=True)
-    budget_type = Column(String(20), nullable=False, index=True)  # global, model, user
-    target_id = Column(String(100), index=True)  # model_id or user_id, null for global
+    budget_type = Column(String(20), nullable=False, index=True)
+    target_id = Column(String(100), index=True)
     daily_budget = Column(DECIMAL(10, 2), nullable=False)
     monthly_budget = Column(DECIMAL(10, 2), nullable=False)
     daily_spent = Column(DECIMAL(10, 2), nullable=False, default=0.0)
     monthly_spent = Column(DECIMAL(10, 2), nullable=False, default=0.0)
     last_reset_date = Column(TIMESTAMP(timezone=True), server_default=func.now())
-    alert_threshold = Column(DECIMAL(5, 2), nullable=False, default=80.0)  # percentage
+    alert_threshold = Column(DECIMAL(5, 2), nullable=False, default=80.0)
+
+
+class QuotaUsage(Base):
+    """Quota usage tracking table."""
+    __tablename__ = "quota_usage"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(String(100), nullable=False, index=True)
+    period_type = Column(String(20), nullable=False)
+    period_start = Column(TIMESTAMP(timezone=True), nullable=False, index=True)
+    tokens_used = Column(BigInteger, default=0)
+    calls_made = Column(Integer, default=0)
+    cost_incurred = Column(DECIMAL(10, 4), default=0)
+    quota_limit = Column(BigInteger)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    
+    __table_args__ = (
+        Index('ix_quota_usage_model_period', 'model_id', 'period_type', 'period_start'),
+    )
+
+
+class FreeProviderQuota(Base):
+    """Free provider quota tracking table."""
+    __tablename__ = "free_provider_quota"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    provider_id = Column(String(100), nullable=False, index=True)
+    date = Column(TIMESTAMP(timezone=True), nullable=False, index=True)
+    requests_used = Column(Integer, default=0)
+    tokens_used = Column(BigInteger, default=0)
+    daily_limit = Column(Integer)
+    monthly_limit = Column(Integer)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    
+    __table_args__ = (
+        Index('ix_free_provider_quota_provider_date', 'provider_id', 'date', unique=True),
+    )
+
+
+class CostAnalysisDaily(Base):
+    """Daily cost analysis table."""
+    __tablename__ = "cost_analysis_daily"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    analysis_date = Column(TIMESTAMP(timezone=True), nullable=False, unique=True, index=True)
+    total_cost = Column(DECIMAL(10, 4), nullable=False)
+    total_tokens = Column(BigInteger, nullable=False)
+    total_requests = Column(Integer, nullable=False)
+    avg_cost_per_request = Column(DECIMAL(10, 6))
+    cache_hit_rate = Column(DECIMAL(5, 2))
+    cost_savings = Column(DECIMAL(10, 4))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
